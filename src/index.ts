@@ -20,3 +20,5 @@ export * from './temporal.js';
 export * from './embed.js';
 export * from './agent-sdk.js';
 export * from './fallback.js';
+export * from './economics.js';
+export * from './federation.js';

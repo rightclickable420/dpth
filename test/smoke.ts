@@ -10,6 +10,18 @@ import { registerMetric, addMetricPoints, getMetric, clearMetrics } from '../src
 import { takeSnapshot, getSnapshots, diffSnapshots, clearSnapshots } from '../src/temporal';
 import { getConfiguredProviders, findFallbackProvider, getFallbackStatus } from '../src/fallback';
 import { DpthAgent } from '../src/agent-sdk';
+import {
+  earnCredits, spendCredits, transferCredits, penalizeAgent,
+  getBalance, getSupply, getLeaderboard, checkRateLimit,
+  getPricingSignal, rewardStorage, rewardGpuInference, chargeInference,
+  createMigrationSnapshot, clearEconomics, InsufficientCreditsError,
+} from '../src/economics';
+import {
+  registerBaseModel, getLatestVersion, getVersionHistory,
+  createTrainingRound, claimTrainingRound, submitWeightDelta,
+  aggregateRound, getAvailableRounds, getTrainingStats,
+  listModelFamilies, clearFederation,
+} from '../src/federation';
 
 let passed = 0;
 let failed = 0;
@@ -191,6 +203,197 @@ test('DpthAgent with GPU capabilities', () => {
     },
   });
   assert(agent.getPublicKey() !== '', 'Should have a public key');
+});
+
+// ─── Economics Module ────────────────────────────────
+console.log('\nEconomics:');
+clearEconomics();
+
+test('earnCredits creates balance and transaction', () => {
+  const tx = earnCredits('agent-eco-1', 100, 'Storage contribution', 'storage');
+  assert(tx.amount === 100, 'Amount should be 100');
+  assert(tx.balanceAfter === 100, 'Balance should be 100');
+  const bal = getBalance('agent-eco-1');
+  assert(bal !== undefined, 'Balance should exist');
+  assert(bal!.balance === 100, 'Balance should be 100');
+  assert(bal!.totalEarned === 100, 'Total earned should be 100');
+});
+
+test('earnCredits applies tier multiplier', () => {
+  const tx = earnCredits('agent-eco-2', 100, 'GPU work', 'gpu', { tier: 'elite' });
+  assert(tx.amount === 200, 'Elite tier should double credits (2.0x)');
+});
+
+test('spendCredits deducts and tracks', () => {
+  const tx = spendCredits('agent-eco-1', 30, 'Query', 'query');
+  assert(tx.balanceAfter === 70, 'Balance should be 70 after spending 30');
+  const bal = getBalance('agent-eco-1');
+  assert(bal!.totalSpent === 30, 'Total spent should be 30');
+});
+
+test('spendCredits throws on insufficient balance', () => {
+  let threw = false;
+  try {
+    spendCredits('agent-eco-1', 9999, 'Too much', 'query');
+  } catch (e) {
+    threw = e instanceof InsufficientCreditsError;
+  }
+  assert(threw, 'Should throw InsufficientCreditsError');
+});
+
+test('transferCredits between agents', () => {
+  // Need trusted tier to transfer
+  earnCredits('agent-eco-3', 500, 'Setup', 'storage');
+  const { fromTx, toTx } = transferCredits('agent-eco-3', 'agent-eco-4', 100, 'Gift', 'trusted');
+  assert(fromTx.balanceAfter === 400, 'Sender should have 400');
+  assert(toTx.balanceAfter === 100, 'Receiver should have 100');
+});
+
+test('penalizeAgent reduces balance', () => {
+  earnCredits('agent-eco-5', 50, 'Setup', 'storage');
+  penalizeAgent('agent-eco-5', 20, 'Bad proof');
+  const bal = getBalance('agent-eco-5');
+  assert(bal!.balance === 30, 'Balance should be 30 after penalty');
+});
+
+test('checkRateLimit enforces limits', () => {
+  const result1 = checkRateLimit('agent-eco-1', 'query', 'newcomer');
+  assert(result1.allowed === true, 'First query should be allowed');
+  assert(result1.remaining === 9, 'Should have 9 remaining (newcomer: 10/hr)');
+});
+
+test('getPricingSignal returns valid signal', () => {
+  const signal = getPricingSignal();
+  assert(signal.demandMultiplier > 0, 'Demand multiplier should be positive');
+  assert(signal.queryPrice > 0, 'Query price should be positive');
+});
+
+test('getSupply tracks network stats', () => {
+  const supply = getSupply();
+  assert(supply.totalMinted > 0, 'Should have minted credits');
+  assert(supply.totalTransactions > 0, 'Should have transactions');
+});
+
+test('getLeaderboard ranks agents', () => {
+  const board = getLeaderboard(3);
+  assert(board.length > 0, 'Should have entries');
+  assert(board[0].rank === 1, 'First should be rank 1');
+  assert(board[0].totalEarned >= board[1]?.totalEarned || board.length === 1, 'Should be sorted');
+});
+
+test('rewardStorage auto-calculates credits', () => {
+  clearEconomics();
+  const tx = rewardStorage('agent-auto-1', 500);
+  assert(tx.amount === 500, '500MB × 1 credit/MB = 500');
+});
+
+test('createMigrationSnapshot captures all balances', () => {
+  earnCredits('agent-snap-1', 100, 'Setup', 'storage');
+  earnCredits('agent-snap-2', 200, 'Setup', 'gpu');
+  const snap = createMigrationSnapshot();
+  assert(snap.agentsSnapshotted >= 2, 'Should snapshot at least 2 agents');
+  assert(snap.totalClaimable > 0, 'Should have claimable credits');
+});
+
+// ─── Federation Module ───────────────────────────────
+console.log('\nFederated Learning:');
+clearFederation();
+
+test('registerBaseModel creates version 1', () => {
+  const version = registerBaseModel('dpth-entity-8b', 'QmBaseModel123');
+  assert(version.version === 1, 'Should be version 1');
+  assert(version.modelFamily === 'dpth-entity-8b', 'Family should match');
+  assert(version.adapterCid === null, 'Base model has no adapter');
+});
+
+test('getLatestVersion retrieves current version', () => {
+  const latest = getLatestVersion('dpth-entity-8b');
+  assert(latest !== undefined, 'Should find latest version');
+  assert(latest!.version === 1, 'Should be version 1');
+});
+
+test('createTrainingRound starts a round', () => {
+  const round = createTrainingRound('dpth-entity-8b', {
+    learningRate: 0.0001,
+    localEpochs: 3,
+    batchSize: 8,
+    loraRank: 16,
+    loraAlpha: 32,
+    targetModules: ['q_proj', 'v_proj'],
+    maxGradNorm: 1.0,
+    dpEpsilon: 8.0,
+    taskTypes: ['entity_recognition'],
+    minLocalExamples: 100,
+  }, { minParticipants: 2, maxParticipants: 5 });
+  assert(round.status === 'pending', 'Should start as pending');
+  assert(round.minParticipants === 2, 'Min participants should be 2');
+});
+
+test('claimTrainingRound adds agent as participant', () => {
+  const rounds = getAvailableRounds();
+  assert(rounds.length > 0, 'Should have available rounds');
+  const participant = claimTrainingRound(rounds[0].id, 'trainer-1');
+  assert(participant.status === 'claimed', 'Should be claimed');
+  // Round should now be active
+  const round = rounds[0];
+  const updated = getAvailableRounds('other-agent');
+  assert(updated.length > 0, 'Round should still be available');
+});
+
+test('submitWeightDelta and aggregation flow', () => {
+  const rounds = getAvailableRounds('trainer-2');
+  const round = rounds[0];
+  
+  // Second agent claims
+  claimTrainingRound(round.id, 'trainer-2');
+  
+  // Both submit deltas
+  submitWeightDelta(round.id, 'trainer-1', {
+    cid: 'QmDelta1',
+    format: { rank: 16, alpha: 32, targetModules: ['q_proj', 'v_proj'], dtype: 'float16' },
+    sizeBytes: 50000,
+    l2Norm: 0.5,
+    trainingExamples: 500,
+  });
+  
+  submitWeightDelta(round.id, 'trainer-2', {
+    cid: 'QmDelta2',
+    format: { rank: 16, alpha: 32, targetModules: ['q_proj', 'v_proj'], dtype: 'float16' },
+    sizeBytes: 45000,
+    l2Norm: 0.4,
+    trainingExamples: 300,
+  });
+  
+  // Manually trigger aggregation
+  const newVersion = aggregateRound(round.id);
+  assert(newVersion.version === 2, 'Should be version 2');
+  assert(newVersion.adapterCid !== null, 'Should have adapter CID');
+  assert(newVersion.parentVersionId !== null, 'Should reference parent');
+  
+  // Latest version should be updated
+  const latest = getLatestVersion('dpth-entity-8b');
+  assert(latest!.version === 2, 'Latest should be version 2');
+});
+
+test('getTrainingStats returns network stats', () => {
+  const stats = getTrainingStats();
+  assert(stats.totalRounds >= 1, 'Should have at least 1 round');
+  assert(stats.completedRounds >= 1, 'Should have completed rounds');
+  assert(stats.totalExamplesProcessed > 0, 'Should have processed examples');
+});
+
+test('listModelFamilies shows registered families', () => {
+  const families = listModelFamilies();
+  assert(families.length >= 1, 'Should have at least 1 family');
+  assert(families[0].family === 'dpth-entity-8b', 'Should be dpth-entity-8b');
+  assert(families[0].latestVersion === 2, 'Latest should be v2');
+});
+
+test('getVersionHistory shows full lineage', () => {
+  const history = getVersionHistory('dpth-entity-8b');
+  assert(history.length === 2, 'Should have 2 versions');
+  assert(history[0].version === 1, 'First should be v1');
+  assert(history[1].version === 2, 'Second should be v2');
 });
 
 // ─── Summary ─────────────────────────────────────────

@@ -33,6 +33,14 @@
     "./fallback": {
       "import": "./dist/fallback.js",
       "types": "./dist/fallback.d.ts"
+    },
+    "./economics": {
+      "import": "./dist/economics.js",
+      "types": "./dist/economics.d.ts"
+    },
+    "./federation": {
+      "import": "./dist/federation.js",
+      "types": "./dist/federation.d.ts"
     }
   },
   "files": [
