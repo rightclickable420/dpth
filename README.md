@@ -2,7 +2,9 @@
 
 **The distributed intelligence layer.**
 
-dpth.io is an open-source protocol for decentralized AI inference, data intelligence, and agent coordination. Agents contribute compute, storage, and GPU resources to the network and receive intelligence in return.
+dpth.io is an open-source intelligence layer that turns every AI agent into infrastructure. Agents contribute storage, compute, and GPU power to the network — and in return, they get access to distributed inference, entity resolution, and cross-source pattern detection they couldn't build alone. Think BitTorrent economics meets AI: the more agents that join, the smarter and cheaper the network gets for everyone.
+
+No single point of failure. No vendor lock-in. Zero infrastructure cost at scale.
 
 ## Architecture
 
@@ -48,6 +50,14 @@ dpth.io is an open-source protocol for decentralized AI inference, data intellig
 - **SSE Streaming** — Real-time token-by-token delivery via Server-Sent Events
 - **Centralized Fallback** — Transparent fallback to OpenAI/Anthropic/Groq/Together when no agents available
 
+## Install
+
+```bash
+npm install dpth
+```
+
+The core library (entity resolution, correlation, temporal, embeddings, agent SDK, fallback) works standalone with zero dependencies. Next.js API routes for the full server are available in the [repo source](src/api/).
+
 ## Quick Start
 
 ### As a Client
@@ -69,6 +79,30 @@ const response = await fetch('/api/dpth/inference', {
 // If agents are online → distributed processing
 // If no agents → automatic centralized fallback
 // Same API either way
+```
+
+### Use the Core Library
+
+```typescript
+import { resolveOrCreate, getEntitiesByType } from 'dpth/entity';
+import { registerMetric, addMetricPoints } from 'dpth/correlation';
+import { takeSnapshot, diffSnapshots } from 'dpth/temporal';
+
+// Entity resolution across sources
+const { entity, isNew } = resolveOrCreate('person', 'Jane Smith', 'github', 'jsmith');
+
+// Track metrics with correlation detection
+registerMetric({ id: 'mrr', entityId: entity.id, name: 'MRR', points: [], aggregation: 'sum' });
+addMetricPoints('mrr', [
+  { timestamp: new Date('2024-01'), value: 10000, source: 'stripe', confidence: 1 },
+  { timestamp: new Date('2024-02'), value: 12500, source: 'stripe', confidence: 1 },
+]);
+
+// Temporal snapshots with diffing
+takeSnapshot('dashboard-1', { revenue: 50000, users: 200 });
+// ...later...
+takeSnapshot('dashboard-1', { revenue: 62000, users: 245 });
+const diff = diffSnapshots(snapshots[0], snapshots[1]); // → changed: ['revenue', 'users']
 ```
 
 ### As an Agent
