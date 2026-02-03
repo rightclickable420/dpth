@@ -1,6 +1,6 @@
 {
   "name": "dpth",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The distributed intelligence layer — decentralized AI inference, data intelligence, and agent coordination.",
   "type": "module",
   "main": "dist/index.js",
@@ -41,6 +41,18 @@
     "./federation": {
       "import": "./dist/federation.js",
       "types": "./dist/federation.d.ts"
+    },
+    "./storage": {
+      "import": "./dist/storage.js",
+      "types": "./dist/storage.d.ts"
+    },
+    "./adapter-sqlite": {
+      "import": "./dist/adapter-sqlite.js",
+      "types": "./dist/adapter-sqlite.d.ts"
+    },
+    "./adapter-vector": {
+      "import": "./dist/adapter-vector.js",
+      "types": "./dist/adapter-vector.d.ts"
     }
   },
   "files": [
@@ -52,7 +64,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "tsx test/smoke.ts && tsx test/integration.ts && tsx test/api.ts",
+    "test": "tsx test/smoke.ts && tsx test/integration.ts && tsx test/api.ts && tsx test/adapters.ts",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
@@ -79,6 +91,14 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "peerDependencies": {
+    "better-sqlite3": ">=11.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    }
   },
   "sideEffects": false,
   "devDependencies": {

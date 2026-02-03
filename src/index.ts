@@ -14,6 +14,7 @@
  */
 
 export * from './types.js';
+export * from './storage.js';
 export * from './entity.js';
 export * from './correlation.js';
 export * from './temporal.js';
