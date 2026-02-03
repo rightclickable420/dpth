@@ -1,5 +1,8 @@
 # dpth.io
 
+[![CI](https://github.com/rightclickable420/dpth/actions/workflows/ci.yml/badge.svg)](https://github.com/rightclickable420/dpth/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 **The distributed intelligence layer.**
 
 dpth.io is an open-source intelligence layer that turns every AI agent into infrastructure. Agents contribute storage, compute, and GPU power to the network — and in return, they get access to distributed inference, entity resolution, and cross-source pattern detection they couldn't build alone. Think BitTorrent economics meets AI: the more agents that join, the smarter and cheaper the network gets for everyone.
