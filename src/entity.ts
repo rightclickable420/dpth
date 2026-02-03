@@ -180,11 +180,14 @@ export function findMatches(
     // Check name
     const entityName = entity.name.toLowerCase();
     if (entityName === name.toLowerCase()) {
-      score += 0.6;
+      score += 0.8; // Exact name match is strong signal
       matchedOn.push('exact_name');
-    } else if (fuzzyMatch(entityName, name.toLowerCase()) > 0.8) {
-      score += 0.4;
+    } else if (fuzzyMatch(entityName, name.toLowerCase()) > 0.85) {
+      score += 0.5;
       matchedOn.push('fuzzy_name');
+    } else if (fuzzyMatch(entityName, name.toLowerCase()) > 0.7) {
+      score += 0.3;
+      matchedOn.push('partial_name');
     }
 
     // Check email attribute

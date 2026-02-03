@@ -93,10 +93,21 @@ export class DpthAgent {
   }
   
   private derivePublicKey(privateKeyPem: string): string {
-    // For ed25519, we can derive public from private
-    // This is a simplified implementation
+    // For ed25519, derive a compact public key identifier
     const hash = createHash('sha256').update(privateKeyPem).digest('hex');
     return `dpth:pub:${hash.slice(0, 32)}`;
+  }
+  
+  /**
+   * Get a header-safe version of the public key (base64, no PEM wrapping)
+   */
+  private getHeaderSafeKey(): string {
+    // Strip PEM headers and newlines for HTTP header compatibility
+    return this.publicKey
+      .replace(/-----BEGIN.*?-----/g, '')
+      .replace(/-----END.*?-----/g, '')
+      .replace(/\n/g, '')
+      .trim();
   }
   
   // ─── API Methods ─────────────────────────────────
@@ -108,7 +119,7 @@ export class DpthAgent {
       headers: {
         'Content-Type': 'application/json',
         'X-Agent-Id': this.agentId || '',
-        'X-Public-Key': this.publicKey,
+        'X-Public-Key': this.getHeaderSafeKey(),
         ...options?.headers,
       },
     });
