@@ -18,6 +18,5 @@ export * from './entity';
 export * from './correlation';
 export * from './temporal';
 export * from './embed';
-export * from './ingest';
 export * from './agent-sdk';
 export * from './fallback';
