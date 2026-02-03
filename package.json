@@ -1,0 +1,48 @@
+{
+  "name": "dpth",
+  "version": "0.1.0",
+  "description": "The distributed intelligence layer — decentralized AI inference, data intelligence, and agent coordination.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./agent-sdk": {
+      "import": "./dist/agent-sdk.js",
+      "types": "./dist/agent-sdk.d.ts"
+    },
+    "./fallback": {
+      "import": "./dist/fallback.js",
+      "types": "./dist/fallback.d.ts"
+    },
+    "./api/*": {
+      "import": "./dist/api/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src/",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "decentralized",
+    "ai",
+    "inference",
+    "intelligence",
+    "agents",
+    "distributed",
+    "p2p"
+  ],
+  "author": "dpth.io contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rightclickable420/dpth.git"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
