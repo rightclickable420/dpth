@@ -19,7 +19,7 @@ import {
   AnomalyData,
   TrendData,
   CorrelationQuery,
-} from './types';
+} from './types.js';
 
 // ─── Metric Store ────────────────────────────────────
 

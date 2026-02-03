@@ -8,7 +8,7 @@
  * and automatic change detection.
  */
 
-import { TemporalValue, SourceId } from './types';
+import { TemporalValue, SourceId } from './types.js';
 
 // ─── Temporal Value Helpers ──────────────────────────
 

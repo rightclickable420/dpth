@@ -2,12 +2,29 @@
   "name": "dpth",
   "version": "0.1.0",
   "description": "The distributed intelligence layer — decentralized AI inference, data intelligence, and agent coordination.",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./entity": {
+      "import": "./dist/entity.js",
+      "types": "./dist/entity.d.ts"
+    },
+    "./correlation": {
+      "import": "./dist/correlation.js",
+      "types": "./dist/correlation.d.ts"
+    },
+    "./temporal": {
+      "import": "./dist/temporal.js",
+      "types": "./dist/temporal.d.ts"
+    },
+    "./embed": {
+      "import": "./dist/embed.js",
+      "types": "./dist/embed.d.ts"
     },
     "./agent-sdk": {
       "import": "./dist/agent-sdk.js",
@@ -16,16 +33,19 @@
     "./fallback": {
       "import": "./dist/fallback.js",
       "types": "./dist/fallback.d.ts"
-    },
-    "./api/*": {
-      "import": "./dist/api/*.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "tsx test/smoke.ts"
+    "test": "tsx test/smoke.ts",
+    "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
     "decentralized",
@@ -34,14 +54,25 @@
     "intelligence",
     "agents",
     "distributed",
-    "p2p"
+    "p2p",
+    "entity-resolution",
+    "correlation",
+    "temporal-data"
   ],
   "author": "dpth.io contributors",
   "license": "MIT",
+  "homepage": "https://github.com/rightclickable420/dpth#readme",
+  "bugs": {
+    "url": "https://github.com/rightclickable420/dpth/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/rightclickable420/dpth.git"
   },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
   "devDependencies": {
     "@types/node": "^25.2.0",
     "next": "^16.1.6",

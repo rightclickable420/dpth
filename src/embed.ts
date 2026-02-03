@@ -9,7 +9,7 @@
  * "What patterns look like this anomaly?"
  */
 
-import { Embedding, Entity, Metric, Pattern, SimilarityQuery } from './types';
+import { Embedding, Entity, Metric, Pattern, SimilarityQuery } from './types.js';
 
 // ─── Embedding Store ─────────────────────────────────
 

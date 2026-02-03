@@ -18,7 +18,7 @@ import {
   SourceRef,
   SourceId,
   TemporalValue,
-} from './types';
+} from './types.js';
 
 // ─── Entity Store ────────────────────────────────────
 

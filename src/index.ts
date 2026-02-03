@@ -13,10 +13,10 @@
  * - Fallback: Centralized inference when no agents available
  */
 
-export * from './types';
-export * from './entity';
-export * from './correlation';
-export * from './temporal';
-export * from './embed';
-export * from './agent-sdk';
-export * from './fallback';
+export * from './types.js';
+export * from './entity.js';
+export * from './correlation.js';
+export * from './temporal.js';
+export * from './embed.js';
+export * from './agent-sdk.js';
+export * from './fallback.js';
