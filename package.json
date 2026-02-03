@@ -1,6 +1,6 @@
 {
   "name": "dpth",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The distributed intelligence layer — decentralized AI inference, data intelligence, and agent coordination.",
   "type": "module",
   "main": "dist/index.js",
@@ -53,6 +53,10 @@
     "./adapter-vector": {
       "import": "./dist/adapter-vector.js",
       "types": "./dist/adapter-vector.d.ts"
+    },
+    "./dpth": {
+      "import": "./dist/dpth.js",
+      "types": "./dist/dpth.d.ts"
     }
   },
   "files": [
@@ -64,7 +68,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "tsx test/smoke.ts && tsx test/integration.ts && tsx test/api.ts && tsx test/adapters.ts",
+    "test": "tsx test/smoke.ts && tsx test/integration.ts && tsx test/api.ts && tsx test/adapters.ts && tsx test/dpth.ts",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
