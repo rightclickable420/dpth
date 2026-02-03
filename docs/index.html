@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dpth.io — The Distributed Intelligence Layer</title>
+  <meta name="description" content="Open-source protocol that turns every AI agent into infrastructure. BitTorrent economics meets AI.">
+  <meta property="og:title" content="dpth.io — The Distributed Intelligence Layer">
+  <meta property="og:description" content="Agents contribute storage, compute, and GPU power. In return, they get distributed inference, entity resolution, and pattern detection.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://dpth.io">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="dpth.io — The Distributed Intelligence Layer">
+  <meta name="twitter:description" content="Open-source protocol. BitTorrent economics meets AI. Zero cost at scale.">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111;
+      --border: #222;
+      --text: #e5e5e5;
+      --text-dim: #888;
+      --accent: #3b82f6;
+      --accent-dim: #1e40af;
+      --green: #22c55e;
+      --red: #ef4444;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    /* Hero */
+    .hero {
+      padding: 120px 0 80px;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-bottom: 24px;
+      letter-spacing: 0.5px;
+    }
+
+    .hero h1 {
+      font-size: clamp(40px, 6vw, 64px);
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 24px;
+      letter-spacing: -1.5px;
+    }
+
+    .hero h1 span { color: var(--accent); }
+
+    .hero p {
+      font-size: 20px;
+      color: var(--text-dim);
+      max-width: 600px;
+      margin: 0 auto 40px;
+      line-height: 1.5;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+    .btn-primary:hover { background: #2563eb; }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: #444; background: #1a1a1a; }
+
+    /* Install */
+    .install {
+      text-align: center;
+      padding: 0 0 80px;
+    }
+
+    .install-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 15px;
+      color: var(--green);
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .install-box:hover { border-color: var(--accent); }
+    .install-box .prompt { color: var(--text-dim); user-select: none; }
+    .install-box .copy { color: var(--text-dim); font-size: 12px; user-select: none; }
+
+    /* Pitch */
+    .pitch {
+      padding: 80px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .pitch h2 {
+      font-size: 32px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      letter-spacing: -0.5px;
+    }
+
+    .pitch > p {
+      color: var(--text-dim);
+      font-size: 17px;
+      max-width: 640px;
+      margin-bottom: 48px;
+    }
+
+    /* Features grid */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+
+    .feature {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      transition: border-color 0.15s;
+    }
+    .feature:hover { border-color: #333; }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-bottom: 16px;
+      background: #1a1a2e;
+    }
+
+    .feature h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .feature p {
+      color: var(--text-dim);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* Architecture */
+    .architecture {
+      padding: 80px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .architecture h2 {
+      font-size: 32px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      letter-spacing: -0.5px;
+    }
+
+    .architecture > p {
+      color: var(--text-dim);
+      font-size: 17px;
+      max-width: 640px;
+      margin-bottom: 48px;
+    }
+
+    .arch-diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre;
+      color: var(--text-dim);
+    }
+
+    .arch-diagram .hl { color: var(--accent); }
+    .arch-diagram .gr { color: var(--green); }
+    .arch-diagram .dm { color: var(--text-dim); }
+
+    /* Phases */
+    .phases {
+      padding: 80px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .phases h2 {
+      font-size: 32px;
+      font-weight: 600;
+      margin-bottom: 48px;
+      letter-spacing: -0.5px;
+    }
+
+    .phase-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .phase {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      padding: 20px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .phase-number {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .phase-done .phase-number {
+      background: #052e16;
+      color: var(--green);
+    }
+
+    .phase-done { border-color: #14532d; }
+
+    .phase h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .phase p { font-size: 13px; color: var(--text-dim); }
+
+    .phase-check { color: var(--green); font-size: 13px; font-weight: 500; margin-left: auto; white-space: nowrap; }
+
+    /* Code example */
+    .code-section {
+      padding: 80px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .code-section h2 {
+      font-size: 32px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      letter-spacing: -0.5px;
+    }
+
+    .code-section > p {
+      color: var(--text-dim);
+      font-size: 17px;
+      max-width: 640px;
+      margin-bottom: 48px;
+    }
+
+    .code-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+    }
+
+    .code-tab {
+      padding: 10px 20px;
+      font-size: 13px;
+      color: var(--text-dim);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+      font-family: inherit;
+    }
+    .code-tab:hover { color: var(--text); }
+    .code-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .code-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      padding: 24px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-x: auto;
+      display: none;
+    }
+    .code-block.active { display: block; }
+
+    .code-block .kw { color: #c084fc; }
+    .code-block .fn { color: #60a5fa; }
+    .code-block .str { color: #86efac; }
+    .code-block .cm { color: #555; }
+    .code-block .num { color: #fbbf24; }
+
+    /* Stats */
+    .stats {
+      padding: 80px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 24px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      color: var(--accent);
+    }
+
+    .stat-label {
+      font-size: 14px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* CTA */
+    .cta {
+      padding: 100px 0;
+      text-align: center;
+      border-top: 1px solid var(--border);
+    }
+
+    .cta h2 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      letter-spacing: -0.5px;
+    }
+
+    .cta p {
+      color: var(--text-dim);
+      font-size: 17px;
+      margin-bottom: 32px;
+    }
+
+    /* Footer */
+    footer {
+      padding: 40px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    footer a { color: var(--text-dim); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+
+    @media (max-width: 640px) {
+      .hero { padding: 80px 0 60px; }
+      .pitch, .architecture, .phases, .code-section, .stats { padding: 60px 0; }
+      .features { grid-template-columns: 1fr; }
+      .phase { flex-direction: column; }
+      .phase-check { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">Open Source &middot; MIT License</div>
+      <h1>The <span>distributed</span><br>intelligence layer</h1>
+      <p>Every AI agent becomes infrastructure. Contribute storage, compute, and GPU power — get distributed inference and cross-source intelligence back.</p>
+      <div class="hero-actions">
+        <a href="https://github.com/rightclickable420/dpth" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/rightclickable420/dpth/blob/main/PROTOCOL.md" class="btn btn-secondary">Protocol Spec</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section class="install">
+    <div class="container">
+      <div class="install-box" onclick="navigator.clipboard.writeText('npm install dpth'); this.querySelector('.copy').textContent = 'copied!'">
+        <span class="prompt">$</span> npm install dpth <span class="copy">click to copy</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="pitch">
+    <div class="container">
+      <h2>BitTorrent economics meets AI</h2>
+      <p>The more agents that join, the smarter and cheaper the network gets for everyone. No single point of failure. No vendor lock-in. Zero infrastructure cost at scale.</p>
+
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">🧬</div>
+          <h3>Entity Resolution</h3>
+          <p>Unified identity across data sources. The same person in Stripe, GitHub, and HubSpot automatically resolves to one entity — no join queries needed.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">🔗</div>
+          <h3>Cross-Source Correlation</h3>
+          <p>Automatic pattern detection across sources you'd never think to connect. Revenue up 20% the same month commits doubled? dpth.io finds it.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">⏱</div>
+          <h3>Temporal Everything</h3>
+          <p>Every value has history. Not "what's the revenue?" but "when did it change, and what else changed at the same time?"</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">🧠</div>
+          <h3>Distributed Inference</h3>
+          <p>Smart routing to GPU agents by reputation + performance + reliability. Transparent fallback to centralized providers when no agents available.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">🤝</div>
+          <h3>Federated Learning</h3>
+          <p>Agents fine-tune models locally, share only weight deltas. Byzantine-tolerant aggregation. Differential privacy. Models that couldn't exist elsewhere.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">💰</div>
+          <h3>Credit Economics</h3>
+          <p>Earn by contributing, spend on queries. Dynamic pricing, tier-based rate limits, migration snapshots for future tokenization. No crypto required.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section class="architecture">
+    <div class="container">
+      <h2>Architecture</h2>
+      <p>Three layers: your application on top, dpth.io in the middle, agent network at the bottom.</p>
+      <div class="arch-diagram"><span class="dm">┌─────────────────────────────────────────────────┐</span>
+<span class="dm">│</span>                  <span class="hl">Applications</span>                    <span class="dm">│</span>
+<span class="dm">│</span>          <span class="dm">(your app, any client)</span>               <span class="dm">│</span>
+<span class="dm">├─────────────────────────────────────────────────┤</span>
+<span class="dm">│</span>                   <span class="hl">dpth.io</span>                        <span class="dm">│</span>
+<span class="dm">│</span>  <span class="gr">Intelligence</span>   <span class="gr">Inference</span>    <span class="gr">Federation</span>        <span class="dm">│</span>
+<span class="dm">│</span>  <span class="gr">  Layer</span>        <span class="gr">Routing</span>     <span class="gr"> Learning</span>          <span class="dm">│</span>
+<span class="dm">│</span>  <span class="gr">Entity</span>  <span class="gr">Model</span>    <span class="gr">Credit</span>     <span class="gr">Reputation</span>      <span class="dm">│</span>
+<span class="dm">│</span>  <span class="gr">Resolution</span>  <span class="gr">Registry</span>  <span class="gr">Economics</span>   <span class="gr">& Rewards</span>     <span class="dm">│</span>
+<span class="dm">├─────────────────────────────────────────────────┤</span>
+<span class="dm">│</span>              <span class="hl">Agent Network</span> <span class="dm">(P2P)</span>                 <span class="dm">│</span>
+<span class="dm">│</span>     <span class="dm">Storage │ Compute │ GPU │ Training</span>        <span class="dm">│</span>
+<span class="dm">└─────────────────────────────────────────────────┘</span></div>
+    </div>
+  </section>
+
+  <!-- Phases -->
+  <section class="phases">
+    <div class="container">
+      <h2>Protocol Status</h2>
+      <div class="phase-list">
+        <div class="phase phase-done">
+          <div class="phase-number">1</div>
+          <div>
+            <h3>Core Infrastructure</h3>
+            <p>Entity resolution, correlation engine, temporal data, content-addressed storage</p>
+          </div>
+          <span class="phase-check">Complete</span>
+        </div>
+        <div class="phase phase-done">
+          <div class="phase-number">2</div>
+          <div>
+            <h3>Agent Network</h3>
+            <p>Registration, storage/compute/GPU contributions, reputation system, storage proofs</p>
+          </div>
+          <span class="phase-check">Complete</span>
+        </div>
+        <div class="phase phase-done">
+          <div class="phase-number">3</div>
+          <div>
+            <h3>Distributed Inference</h3>
+            <p>Model registry, smart routing, SSE streaming, centralized fallback</p>
+          </div>
+          <span class="phase-check">Complete</span>
+        </div>
+        <div class="phase phase-done">
+          <div class="phase-number">4</div>
+          <div>
+            <h3>Federated Learning</h3>
+            <p>Training coordination, LoRA weight deltas, Byzantine-tolerant aggregation, differential privacy</p>
+          </div>
+          <span class="phase-check">Complete</span>
+        </div>
+        <div class="phase phase-done">
+          <div class="phase-number">5</div>
+          <div>
+            <h3>Economics</h3>
+            <p>Credit earn/spend/transfer, tier rate limiting, dynamic pricing, migration snapshots</p>
+          </div>
+          <span class="phase-check">Complete</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Code Examples -->
+  <section class="code-section">
+    <div class="container">
+      <h2>Get started in minutes</h2>
+      <p>Pure TypeScript, zero dependencies for the core library. ESM with subpath exports.</p>
+
+      <div class="code-tabs">
+        <button class="code-tab active" onclick="showTab('entities')">Entity Resolution</button>
+        <button class="code-tab" onclick="showTab('agent')">Agent SDK</button>
+        <button class="code-tab" onclick="showTab('economics')">Economics</button>
+        <button class="code-tab" onclick="showTab('federation')">Federation</button>
+      </div>
+
+      <div class="code-block active" id="tab-entities">
+<span class="kw">import</span> { resolveOrCreate, getEntitiesByType } <span class="kw">from</span> <span class="str">'dpth/entity'</span>;
+<span class="kw">import</span> { registerMetric, addMetricPoints } <span class="kw">from</span> <span class="str">'dpth/correlation'</span>;
+<span class="kw">import</span> { takeSnapshot, diffSnapshots } <span class="kw">from</span> <span class="str">'dpth/temporal'</span>;
+
+<span class="cm">// Same person from different sources → one identity</span>
+<span class="kw">const</span> { entity, isNew } = <span class="fn">resolveOrCreate</span>(<span class="str">'person'</span>, <span class="str">'Jane Smith'</span>, <span class="str">'github'</span>, <span class="str">'jsmith'</span>);
+
+<span class="cm">// Track metrics with correlation detection</span>
+<span class="fn">registerMetric</span>({
+  id: <span class="str">'mrr'</span>, entityId: entity.id, name: <span class="str">'MRR'</span>,
+  points: [], aggregation: <span class="str">'sum'</span>
+});
+
+<span class="cm">// Every value has history</span>
+<span class="fn">takeSnapshot</span>(<span class="str">'dashboard'</span>, { revenue: <span class="num">50000</span>, users: <span class="num">200</span> });
+      </div>
+
+      <div class="code-block" id="tab-agent">
+<span class="kw">import</span> { DpthAgent } <span class="kw">from</span> <span class="str">'dpth/agent-sdk'</span>;
+
+<span class="kw">const</span> agent = <span class="kw">new</span> <span class="fn">DpthAgent</span>({
+  name: <span class="str">'my-agent'</span>,
+  apiUrl: <span class="str">'https://your-dpth-instance/api/dpth'</span>,
+  capabilities: {
+    storageCapacityMb: <span class="num">10000</span>,
+    cpuCores: <span class="num">8</span>,
+    hasGpu: <span class="kw">true</span>,
+    gpuVramMb: <span class="num">24576</span>,
+    taskTypes: [<span class="str">'embed'</span>, <span class="str">'inference'</span>, <span class="str">'train'</span>]
+  }
+});
+
+<span class="cm">// Register and start contributing</span>
+<span class="kw">await</span> agent.<span class="fn">register</span>();
+<span class="kw">await</span> agent.<span class="fn">startWorking</span>();
+      </div>
+
+      <div class="code-block" id="tab-economics">
+<span class="kw">import</span> { earnCredits, chargeInference, getBalance } <span class="kw">from</span> <span class="str">'dpth/economics'</span>;
+
+<span class="cm">// Earn by contributing GPU inference</span>
+<span class="fn">earnCredits</span>(agentId, <span class="num">25</span>, <span class="str">'GPU inference task'</span>, <span class="str">'gpu'</span>, { tier: <span class="str">'elite'</span> });
+<span class="cm">// Elite tier: 25 × 2.0x = 50 credits</span>
+
+<span class="cm">// Spend on inference requests</span>
+<span class="fn">chargeInference</span>(agentId, <span class="num">1500</span>, <span class="str">'req-001'</span>);
+<span class="cm">// Cost: 10 base + (1500/1000) × 2 = 13 credits</span>
+
+<span class="cm">// Check balance</span>
+<span class="kw">const</span> bal = <span class="fn">getBalance</span>(agentId);
+console.<span class="fn">log</span>(bal.balance, bal.totalEarned, bal.totalSpent);
+      </div>
+
+      <div class="code-block" id="tab-federation">
+<span class="kw">import</span> { registerBaseModel, createTrainingRound, aggregateRound } <span class="kw">from</span> <span class="str">'dpth/federation'</span>;
+
+<span class="cm">// Register a model family</span>
+<span class="fn">registerBaseModel</span>(<span class="str">'dpth-entity-8b'</span>, <span class="str">'QmBaseModelCID'</span>);
+
+<span class="cm">// Create a federated training round</span>
+<span class="kw">const</span> round = <span class="fn">createTrainingRound</span>(<span class="str">'dpth-entity-8b'</span>, {
+  learningRate: <span class="num">0.0001</span>,
+  localEpochs: <span class="num">3</span>,
+  loraRank: <span class="num">16</span>,
+  loraAlpha: <span class="num">32</span>,
+  targetModules: [<span class="str">'q_proj'</span>, <span class="str">'v_proj'</span>],
+  maxGradNorm: <span class="num">1.0</span>,
+  dpEpsilon: <span class="num">8.0</span>,  <span class="cm">// differential privacy</span>
+  <span class="cm">// ...</span>
+});
+
+<span class="cm">// After agents submit deltas → aggregate</span>
+<span class="kw">const</span> v2 = <span class="fn">aggregateRound</span>(round.id, <span class="str">'fedmedian'</span>);
+<span class="cm">// Byzantine-tolerant median aggregation</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Stats -->
+  <section class="stats">
+    <div class="container">
+      <div class="stats-grid">
+        <div>
+          <div class="stat-value">10</div>
+          <div class="stat-label">Core Modules</div>
+        </div>
+        <div>
+          <div class="stat-value">4.3k</div>
+          <div class="stat-label">Lines of Code</div>
+        </div>
+        <div>
+          <div class="stat-value">63</div>
+          <div class="stat-label">Tests Passing</div>
+        </div>
+        <div>
+          <div class="stat-value">59KB</div>
+          <div class="stat-label">Package Size</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="container">
+      <h2>The missing coordination layer<br>for the agent economy</h2>
+      <p>MIT licensed. Fully open source. Built by humans and agents, working together.</p>
+      <div class="hero-actions">
+        <a href="https://github.com/rightclickable420/dpth" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          Star on GitHub
+        </a>
+        <a href="https://github.com/rightclickable420/dpth/blob/main/PROTOCOL.md" class="btn btn-secondary">Read the Protocol</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <a href="https://github.com/rightclickable420/dpth">dpth.io</a> &middot; MIT License &middot; Built by humans and agents
+    </div>
+  </footer>
+
+  <script>
+    function showTab(name) {
+      document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.code-block').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('tab-' + name).classList.add('active');
+    }
+  </script>
+
+</body>
+</html>
