@@ -4,6 +4,13 @@
  * Standalone API server for the dpth agent network.
  * Uses dpth's own SQLiteAdapter for all persistence.
  * 
+ * SIGNAL SECURITY MODEL:
+ * - Individual signals are NEVER stored — only aggregated statistics
+ * - Source registry: only recognized source identifiers in schemas
+ * - Rule vocabulary: only recognized matching strategies
+ * - No free-text fields — everything validated against registries
+ * - No agent attribution on signals — aggregates are anonymous
+ * 
  * Run: npx tsx server/index.ts
  * Deploy: pm2 start server/index.ts --interpreter npx --interpreter-args tsx --name dpth-api
  */
@@ -24,6 +31,105 @@ const app = new Hono();
 const startTime = Date.now();
 
 app.use('*', cors());
+
+// ── Source Registry ─────────────────────────────────
+// Only recognized sources can appear in signal schemas.
+// Adding a new source is a deliberate protocol decision.
+
+const SOURCE_REGISTRY = new Set([
+  // Payment / billing
+  'stripe', 'paypal', 'square', 'braintree', 'adyen',
+  // Code / dev
+  'github', 'gitlab', 'bitbucket', 'jira', 'linear',
+  // CRM / sales
+  'hubspot', 'salesforce', 'pipedrive', 'close',
+  // Support
+  'zendesk', 'intercom', 'freshdesk',
+  // Commerce
+  'shopify', 'woocommerce', 'bigcommerce',
+  // Accounting
+  'quickbooks', 'xero', 'freshbooks',
+  // Communication
+  'slack', 'discord', 'teams',
+  // Analytics
+  'google_analytics', 'mixpanel', 'amplitude', 'segment',
+  // Auth / identity
+  'auth0', 'okta', 'clerk',
+  // Email / marketing
+  'mailchimp', 'sendgrid', 'resend',
+  // Documents
+  'google_docs', 'notion', 'confluence',
+  // Cloud
+  'aws', 'gcp', 'azure',
+  // Generic (for less common sources)
+  'api', 'csv', 'database', 'webhook', 'manual',
+]);
+
+// ── Rule Vocabulary ─────────────────────────────────
+// Only recognized matching rules can appear in signals.
+// Each rule has defined semantic meaning.
+
+const RULE_REGISTRY = new Set([
+  // Identity matching
+  'email_exact',           // Exact email match
+  'email_domain',          // Same email domain
+  'email_normalized',      // Normalized email (case, dots, plus-addressing)
+  'name_exact',            // Exact name match
+  'name_fuzzy',            // Fuzzy/similarity name match
+  'name_abbreviation',     // Abbreviation matching (e.g. "Acme Corp" → "ACME Corporation")
+  'phone_exact',           // Exact phone match
+  'phone_normalized',      // Normalized phone (country code, formatting)
+  'address_exact',         // Exact address match
+  'address_normalized',    // Normalized address (abbreviations, formatting)
+  'external_id',           // Shared external ID across sources
+  'url_match',             // URL/domain matching
+  'alias_match',           // Known alias/username matching
+
+  // Behavioral matching
+  'timing_correlation',    // Activity timing patterns
+  'transaction_pattern',   // Transaction pattern similarity
+]);
+
+// ── Modifier Vocabulary ─────────────────────────────
+// Conditions that affect match confidence.
+
+const MODIFIER_REGISTRY = new Set([
+  'generic_domain',        // gmail, yahoo, hotmail, etc.
+  'corporate_domain',      // Company-specific email domain
+  'exact',                 // Exact/precise match
+  'partial',               // Partial match
+  'case_insensitive',      // Match was case-insensitive
+  'nickname_variant',      // Common nickname (Bob/Robert, etc.)
+  'unicode_normalized',    // Unicode normalization applied
+  'high_population',       // Common name (John Smith, etc.)
+  'low_population',        // Uncommon/unique name
+  'single_source',         // Only one source in this schema had the field
+  'multi_field',           // Multiple fields contributed to this match
+  'none',                  // No modifier (default)
+]);
+
+// ── Validation ──────────────────────────────────────
+
+function validateSchema(schema: string): string | null {
+  const parts = schema.split('+');
+  if (parts.length !== 2) return 'Schema must be exactly two sources joined by "+"';
+  const [a, b] = parts;
+  if (!SOURCE_REGISTRY.has(a)) return `Unknown source: "${a}". See GET /registry for valid sources.`;
+  if (!SOURCE_REGISTRY.has(b)) return `Unknown source: "${b}". See GET /registry for valid sources.`;
+  if (a === b) return 'Schema must have two different sources';
+  return null;
+}
+
+function validateRule(rule: string): string | null {
+  if (!RULE_REGISTRY.has(rule)) return `Unknown rule: "${rule}". See GET /registry for valid rules.`;
+  return null;
+}
+
+function validateModifier(modifier: string | undefined): string | null {
+  if (!modifier || modifier === 'none') return null;
+  if (!MODIFIER_REGISTRY.has(modifier)) return `Unknown modifier: "${modifier}". See GET /registry for valid modifiers.`;
+  return null;
+}
 
 // ── Types ───────────────────────────────────────────
 
@@ -64,24 +170,45 @@ interface CreditBalance {
   tier: string;
 }
 
-interface ResolutionSignal {
+/**
+ * Aggregate signal bucket — the ONLY thing stored.
+ * Individual signals are folded in and discarded.
+ * No agent attribution, no individual data points.
+ */
+interface SignalBucket {
+  /** Canonical key: "stripe+github:email_exact:generic_domain" */
   id: string;
-  agentId: string;
-  schema: string;         // e.g. "stripe+github"
-  rule: string;           // e.g. "email_exact_match"
-  modifier?: string;      // e.g. "generic_domain"
+  schema: string;
+  rule: string;
+  modifier: string;
+  /** Total resolution attempts folded into this bucket */
+  attempts: number;
+  /** Running total of true positives */
   truePositives: number;
+  /** Running total of false positives */
   falsePositives: number;
-  totalAttempts: number;
+  /** Computed: truePositives / attempts */
   precision: number;
-  submittedAt: Date;
+  /** Computed: falsePositives / attempts */
+  falseMergeRate: number;
+  /** Number of independent contributions (not stored per-agent, just count) */
+  contributions: number;
+  /** First signal received */
+  firstSeen: Date;
+  /** Last signal received */
+  lastUpdated: Date;
 }
 
 // ── Helpers ──────────────────────────────────────────
 
 async function ensureReady() {
-  // SQLiteAdapter initializes async — wait for it
   await adapter.get('_init', '_init');
+}
+
+function bucketKey(schema: string, rule: string, modifier?: string): string {
+  // Normalize schema to alphabetical order: "github+stripe" → "github+stripe"
+  const parts = schema.split('+').sort();
+  return `${parts.join('+')}:${rule}:${modifier || 'none'}`;
 }
 
 // ── Routes: Status ──────────────────────────────────
@@ -91,7 +218,7 @@ app.get('/', async (c) => {
   
   const agents = await adapter.query({ collection: 'agents' }) as Agent[];
   const tasks = await adapter.query({ collection: 'tasks' }) as Task[];
-  const signals = await adapter.query({ collection: 'signals' }) as ResolutionSignal[];
+  const buckets = await adapter.query({ collection: 'signal_buckets' }) as SignalBucket[];
   
   const online = agents.filter(a => a.status === 'online').length;
   const uptimeH = Math.floor((Date.now() - startTime) / 3600000);
@@ -115,12 +242,38 @@ app.get('/', async (c) => {
       completed: tasks.filter(t => t.status === 'completed').length,
     },
     intelligence: {
-      resolutionSignals: signals.length,
-      schemas: [...new Set(signals.map(s => s.schema))].length,
-      avgPrecision: signals.length > 0
-        ? Math.round(signals.reduce((s, sig) => s + sig.precision, 0) / signals.length * 1000) / 1000
+      buckets: buckets.length,
+      schemas: [...new Set(buckets.map(b => b.schema))].length,
+      totalAttempts: buckets.reduce((s, b) => s + b.attempts, 0),
+      totalContributions: buckets.reduce((s, b) => s + b.contributions, 0),
+      avgPrecision: buckets.length > 0
+        ? Math.round(
+            buckets.reduce((s, b) => s + b.precision * b.attempts, 0) /
+            buckets.reduce((s, b) => s + b.attempts, 0) * 1000
+          ) / 1000
         : null,
     },
+    security: {
+      model: 'aggregate-only',
+      individualSignalsStored: false,
+      agentAttribution: false,
+      sourceRegistry: SOURCE_REGISTRY.size,
+      ruleVocabulary: RULE_REGISTRY.size,
+      modifierVocabulary: MODIFIER_REGISTRY.size,
+    },
+  });
+});
+
+// ── Routes: Registry ────────────────────────────────
+// Public: what sources, rules, and modifiers are recognized
+
+app.get('/registry', (c) => {
+  return c.json({
+    sources: [...SOURCE_REGISTRY].sort(),
+    rules: [...RULE_REGISTRY].sort(),
+    modifiers: [...MODIFIER_REGISTRY].sort(),
+    schemaFormat: '{source}+{source} (alphabetically sorted)',
+    note: 'Signals with unrecognized values are rejected. To propose new entries, see PROTOCOL.md.',
   });
 });
 
@@ -146,7 +299,7 @@ app.post('/agents', async (c) => {
   // Initialize credit balance
   const balance: CreditBalance = {
     agentId: agent.id,
-    balance: 10, // Starter credits
+    balance: 10,
     totalEarned: 10,
     totalSpent: 0,
     tier: 'newcomer',
@@ -197,8 +350,6 @@ app.post('/tasks', async (c) => {
 app.get('/tasks', async (c) => {
   await ensureReady();
   const status = c.req.query('status');
-  const filter: Record<string, unknown> = {};
-  if (status) filter.status = status;
   
   const tasks = await adapter.query({
     collection: 'tasks',
@@ -267,51 +418,113 @@ app.get('/credits', async (c) => {
   const sorted = all.sort((a, b) => b.totalEarned - a.totalEarned);
   return c.json({
     leaderboard: sorted.slice(0, 50),
-    networkSupply: all.reduce((s, c) => s + c.balance, 0),
-    totalMinted: all.reduce((s, c) => s + c.totalEarned, 0),
-    totalBurned: all.reduce((s, c) => s + c.totalSpent, 0),
+    networkSupply: all.reduce((s, cb) => s + cb.balance, 0),
+    totalMinted: all.reduce((s, cb) => s + cb.totalEarned, 0),
+    totalBurned: all.reduce((s, cb) => s + cb.totalSpent, 0),
   });
 });
 
 // ── Routes: Resolution Signals (The Waze Layer) ─────
+//
+// SECURITY: Individual signals are NEVER stored.
+// Incoming signals are validated, folded into aggregate
+// buckets, and discarded. The bucket stores only:
+//   { attempts, truePositives, falsePositives, contributions }
+// No agent IDs, no individual data points, no PII.
 
 app.post('/signals', async (c) => {
   await ensureReady();
   const body = await c.req.json();
   
+  // ── Validate all fields against registries ──
   if (!body.schema || !body.rule) {
     return c.json({ error: 'schema and rule are required' }, 400);
   }
   
-  const signal: ResolutionSignal = {
-    id: `sig_${randomHex(12)}`,
-    agentId: body.agentId || 'anonymous',
-    schema: body.schema,
-    rule: body.rule,
-    modifier: body.modifier,
-    truePositives: body.truePositives || 0,
-    falsePositives: body.falsePositives || 0,
-    totalAttempts: body.totalAttempts || 0,
-    precision: body.totalAttempts > 0
-      ? (body.truePositives || 0) / body.totalAttempts
-      : 0,
-    submittedAt: new Date(),
-  };
+  const schemaErr = validateSchema(body.schema);
+  if (schemaErr) return c.json({ error: schemaErr }, 400);
   
-  await adapter.put('signals', signal.id, signal);
+  const ruleErr = validateRule(body.rule);
+  if (ruleErr) return c.json({ error: ruleErr }, 400);
   
-  // Reward the contributing agent
+  const modErr = validateModifier(body.modifier);
+  if (modErr) return c.json({ error: modErr }, 400);
+  
+  // Validate numeric bounds
+  const truePos = Math.max(0, Math.floor(body.truePositives || 0));
+  const falsePos = Math.max(0, Math.floor(body.falsePositives || 0));
+  const attempts = Math.max(0, Math.floor(body.totalAttempts || 0));
+  
+  if (attempts === 0) {
+    return c.json({ error: 'totalAttempts must be > 0' }, 400);
+  }
+  if (truePos + falsePos > attempts) {
+    return c.json({ error: 'truePositives + falsePositives cannot exceed totalAttempts' }, 400);
+  }
+  if (attempts > 100000) {
+    return c.json({ error: 'totalAttempts capped at 100,000 per signal submission' }, 400);
+  }
+  
+  // ── Fold into aggregate bucket (no individual storage) ──
+  const key = bucketKey(body.schema, body.rule, body.modifier);
+  const normalizedSchema = body.schema.split('+').sort().join('+');
+  const modifier = body.modifier || 'none';
+  
+  let bucket = await adapter.get('signal_buckets', key) as SignalBucket | undefined;
+  
+  if (bucket) {
+    // Fold signal into existing bucket
+    bucket.attempts += attempts;
+    bucket.truePositives += truePos;
+    bucket.falsePositives += falsePos;
+    bucket.precision = bucket.attempts > 0 ? bucket.truePositives / bucket.attempts : 0;
+    bucket.falseMergeRate = bucket.attempts > 0 ? bucket.falsePositives / bucket.attempts : 0;
+    bucket.contributions += 1;
+    bucket.lastUpdated = new Date();
+  } else {
+    // Create new bucket
+    bucket = {
+      id: key,
+      schema: normalizedSchema,
+      rule: body.rule,
+      modifier,
+      attempts,
+      truePositives: truePos,
+      falsePositives: falsePos,
+      precision: attempts > 0 ? truePos / attempts : 0,
+      falseMergeRate: attempts > 0 ? falsePos / attempts : 0,
+      contributions: 1,
+      firstSeen: new Date(),
+      lastUpdated: new Date(),
+    };
+  }
+  
+  await adapter.put('signal_buckets', key, bucket);
+  
+  // Reward the contributing agent (credits only, no signal attribution)
   if (body.agentId) {
     const credits = await adapter.get('credits', body.agentId) as CreditBalance | undefined;
     if (credits) {
-      const reward = Math.min(signal.totalAttempts * 0.01, 10); // Up to 10 credits per signal
+      const reward = Math.min(attempts * 0.01, 10);
       credits.balance += reward;
       credits.totalEarned += reward;
       await adapter.put('credits', body.agentId, credits);
     }
   }
   
-  return c.json({ signal }, 201);
+  // Return the aggregate (not the individual signal — it doesn't exist)
+  return c.json({
+    accepted: true,
+    bucket: {
+      schema: bucket.schema,
+      rule: bucket.rule,
+      modifier: bucket.modifier,
+      precision: Math.round(bucket.precision * 1000) / 1000,
+      falseMergeRate: Math.round(bucket.falseMergeRate * 1000) / 1000,
+      attempts: bucket.attempts,
+      contributions: bucket.contributions,
+    },
+  }, 201);
 });
 
 app.get('/signals', async (c) => {
@@ -319,51 +532,28 @@ app.get('/signals', async (c) => {
   const schema = c.req.query('schema');
   const rule = c.req.query('rule');
   
-  let signals: ResolutionSignal[];
+  let buckets = await adapter.query({ collection: 'signal_buckets' }) as SignalBucket[];
+  
   if (schema) {
-    signals = await adapter.query({ collection: 'signals', where: { schema } }) as ResolutionSignal[];
-  } else {
-    signals = await adapter.query({ collection: 'signals' }) as ResolutionSignal[];
+    const normalized = schema.split('+').sort().join('+');
+    buckets = buckets.filter(b => b.schema === normalized);
   }
-  
   if (rule) {
-    signals = signals.filter(s => s.rule === rule);
-  }
-  
-  // Aggregate signals by schema+rule for the response
-  const aggregated = new Map<string, {
-    schema: string;
-    rule: string;
-    modifier?: string;
-    avgPrecision: number;
-    totalAttempts: number;
-    contributorCount: number;
-    signals: number;
-  }>();
-  
-  for (const sig of signals) {
-    const key = `${sig.schema}:${sig.rule}:${sig.modifier || ''}`;
-    const existing = aggregated.get(key);
-    if (existing) {
-      existing.avgPrecision = (existing.avgPrecision * existing.signals + sig.precision) / (existing.signals + 1);
-      existing.totalAttempts += sig.totalAttempts;
-      existing.signals++;
-    } else {
-      aggregated.set(key, {
-        schema: sig.schema,
-        rule: sig.rule,
-        modifier: sig.modifier,
-        avgPrecision: sig.precision,
-        totalAttempts: sig.totalAttempts,
-        contributorCount: 1,
-        signals: 1,
-      });
-    }
+    buckets = buckets.filter(b => b.rule === rule);
   }
   
   return c.json({
-    signals: Array.from(aggregated.values()),
-    totalRaw: signals.length,
+    buckets: buckets.map(b => ({
+      schema: b.schema,
+      rule: b.rule,
+      modifier: b.modifier,
+      precision: Math.round(b.precision * 1000) / 1000,
+      falseMergeRate: Math.round(b.falseMergeRate * 1000) / 1000,
+      attempts: b.attempts,
+      contributions: b.contributions,
+      lastUpdated: b.lastUpdated,
+    })),
+    count: buckets.length,
   });
 });
 
@@ -372,32 +562,52 @@ app.get('/signals/calibrate', async (c) => {
   await ensureReady();
   const schema = c.req.query('schema');
   const rule = c.req.query('rule');
+  const modifier = c.req.query('modifier');
   
   if (!schema || !rule) {
     return c.json({ error: 'schema and rule query params required' }, 400);
   }
   
-  const signals = await adapter.query({
-    collection: 'signals',
-    where: { schema, rule },
-  }) as ResolutionSignal[];
+  const key = bucketKey(schema, rule, modifier);
+  const bucket = await adapter.get('signal_buckets', key) as SignalBucket | undefined;
   
-  if (signals.length === 0) {
-    return c.json({ calibration: null, message: 'No signals for this schema+rule combination' });
+  if (!bucket) {
+    // No data for this combination — try without modifier
+    const baseKey = bucketKey(schema, rule, 'none');
+    const baseBucket = await adapter.get('signal_buckets', baseKey) as SignalBucket | undefined;
+    
+    if (!baseBucket) {
+      return c.json({
+        calibration: null,
+        message: 'No signals for this combination. Your agent is the first — contribute!',
+      });
+    }
+    
+    return c.json({
+      calibration: {
+        schema: baseBucket.schema,
+        rule: baseBucket.rule,
+        modifier: 'none',
+        precision: Math.round(baseBucket.precision * 1000) / 1000,
+        falseMergeRate: Math.round(baseBucket.falseMergeRate * 1000) / 1000,
+        confidence: Math.min(baseBucket.attempts / 1000, 1),
+        attempts: baseBucket.attempts,
+        contributions: baseBucket.contributions,
+      },
+      note: `No data for modifier "${modifier || 'none'}", returning base rule stats.`,
+    });
   }
-  
-  const totalAttempts = signals.reduce((s, sig) => s + sig.totalAttempts, 0);
-  const weightedPrecision = signals.reduce((s, sig) => s + sig.precision * sig.totalAttempts, 0) / totalAttempts;
   
   return c.json({
     calibration: {
-      schema,
-      rule,
-      precision: Math.round(weightedPrecision * 1000) / 1000,
-      confidence: Math.min(totalAttempts / 1000, 1), // Confidence grows with sample size
-      totalAttempts,
-      contributorCount: new Set(signals.map(s => s.agentId)).size,
-      signalCount: signals.length,
+      schema: bucket.schema,
+      rule: bucket.rule,
+      modifier: bucket.modifier,
+      precision: Math.round(bucket.precision * 1000) / 1000,
+      falseMergeRate: Math.round(bucket.falseMergeRate * 1000) / 1000,
+      confidence: Math.min(bucket.attempts / 1000, 1),
+      attempts: bucket.attempts,
+      contributions: bucket.contributions,
     },
   });
 });
@@ -409,5 +619,6 @@ console.log(`dpth.io coordinator starting on port ${PORT}...`);
 serve({ fetch: app.fetch, port: PORT }, () => {
   console.log(`✓ dpth.io network coordinator live at http://localhost:${PORT}`);
   console.log(`  Database: ${DB_PATH}`);
-  console.log(`  Endpoints: /, /agents, /tasks, /credits, /signals, /signals/calibrate`);
+  console.log(`  Security: aggregate-only signals, ${SOURCE_REGISTRY.size} sources, ${RULE_REGISTRY.size} rules, ${MODIFIER_REGISTRY.size} modifiers`);
+  console.log(`  Endpoints: /, /registry, /agents, /tasks, /credits, /signals, /signals/calibrate`);
 });
