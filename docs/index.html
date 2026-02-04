@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>dpth.io — Connect your data sources. Find what you're missing.</title>
-  <meta name="description" content="Open-source TypeScript library that connects data across APIs. Entity resolution, cross-source pattern detection, and temporal history — zero dependencies, works anywhere Node runs.">
+  <title>dpth — Structured memory for AI agents</title>
+  <meta name="description" content="TypeScript library that gives agents persistent, cross-source memory. Entity resolution, temporal history, and pattern detection — with an opt-in network that makes every agent smarter.">
   <link rel="canonical" href="https://dpth.io/">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="dpth.io — Connect your data sources. Find what you're missing.">
-  <meta property="og:description" content="Open-source TypeScript library that connects data across APIs. Same person in Stripe and GitHub? dpth resolves that automatically. Revenue spiked when commits doubled? dpth finds that too.">
+  <meta property="og:title" content="dpth — Structured memory for AI agents">
+  <meta property="og:description" content="Your agent encounters the same person in 10 different places. dpth knows it's one person — and remembers everything about them.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://dpth.io">
   <meta property="og:image" content="https://dpth.io/twitter-card.png">
@@ -20,12 +20,12 @@
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:site" content="@rightclickable">
-  <meta name="twitter:title" content="dpth.io — Connect your data sources. Find what you're missing.">
-  <meta name="twitter:description" content="Open-source TypeScript library. Entity resolution across APIs, cross-source pattern detection, temporal history. Zero deps.">
+  <meta name="twitter:title" content="dpth — Structured memory for AI agents">
+  <meta name="twitter:description" content="Entity resolution, temporal history, and cross-source patterns. One npm install, zero deps. Opt into the network and every agent gets smarter.">
   <meta name="twitter:image" content="https://dpth.io/twitter-card.png">
 
   <!-- SEO -->
-  <meta name="keywords" content="distributed AI, decentralized inference, entity resolution, federated learning, agent network, open source, TypeScript, npm, dpth">
+  <meta name="keywords" content="entity resolution, AI agent memory, temporal data, cross-source patterns, TypeScript, npm, identity resolution, data matching">
   <meta name="author" content="dpth.io contributors">
   <meta name="robots" content="index, follow">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
@@ -39,7 +39,7 @@
       --accent: #3b82f6;
       --accent-dim: #1e40af;
       --green: #22c55e;
-      --red: #ef4444;
+      --yellow: #eab308;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -52,46 +52,50 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+    code, .mono {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    }
 
-    /* Hero */
+    .container { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── Hero ── */
     .hero {
-      padding: 120px 0 80px;
+      padding: 120px 0 40px;
       text-align: center;
     }
 
     .hero-badge {
       display: inline-block;
-      padding: 4px 12px;
+      padding: 4px 14px;
       border: 1px solid var(--border);
       border-radius: 20px;
       font-size: 13px;
       color: var(--text-dim);
-      margin-bottom: 24px;
-      letter-spacing: 0.5px;
+      margin-bottom: 28px;
+      letter-spacing: 0.3px;
     }
 
     .hero h1 {
-      font-size: clamp(40px, 6vw, 64px);
+      font-size: clamp(36px, 5.5vw, 56px);
       font-weight: 700;
-      line-height: 1.1;
+      line-height: 1.12;
       margin-bottom: 24px;
       letter-spacing: -1.5px;
     }
 
-    .hero h1 span { color: var(--accent); }
+    .hero h1 .hl { color: var(--accent); }
 
-    .hero p {
-      font-size: 20px;
+    .hero .sub {
+      font-size: 19px;
       color: var(--text-dim);
-      max-width: 600px;
+      max-width: 580px;
       margin: 0 auto 40px;
-      line-height: 1.5;
+      line-height: 1.55;
     }
 
     .hero-actions {
       display: flex;
-      gap: 16px;
+      gap: 12px;
       justify-content: center;
       flex-wrap: wrap;
     }
@@ -100,28 +104,27 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 12px 24px;
+      padding: 11px 22px;
       border-radius: 8px;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 500;
       text-decoration: none;
       transition: all 0.15s;
+      border: none;
+      cursor: pointer;
     }
 
-    .btn-primary {
-      background: var(--accent);
-      color: white;
-    }
+    .btn-primary { background: var(--accent); color: white; }
     .btn-primary:hover { background: #2563eb; }
 
-    .btn-secondary {
-      background: var(--surface);
-      color: var(--text);
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-dim);
       border: 1px solid var(--border);
     }
-    .btn-secondary:hover { border-color: #444; background: #1a1a1a; }
+    .btn-ghost:hover { border-color: #444; color: var(--text); }
 
-    /* Install */
+    /* ── Install ── */
     .install {
       text-align: center;
       padding: 0 0 80px;
@@ -135,7 +138,6 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 12px 20px;
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
       font-size: 15px;
       color: var(--green);
       cursor: pointer;
@@ -145,246 +147,159 @@
     .install-box .prompt { color: var(--text-dim); user-select: none; }
     .install-box .copy { color: var(--text-dim); font-size: 12px; user-select: none; }
 
-    /* Pitch */
-    .pitch {
+    /* ── Section ── */
+    .section {
       padding: 80px 0;
       border-top: 1px solid var(--border);
     }
 
-    .pitch h2 {
-      font-size: 32px;
+    .section-label {
+      font-size: 12px;
       font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--accent);
       margin-bottom: 16px;
+    }
+
+    .section h2 {
+      font-size: 30px;
+      font-weight: 600;
+      margin-bottom: 12px;
       letter-spacing: -0.5px;
     }
 
-    .pitch > p {
+    .section > .desc, .section > .container > .desc {
       color: var(--text-dim);
-      font-size: 17px;
-      max-width: 640px;
-      margin-bottom: 48px;
-    }
-
-    /* Features grid */
-    .features {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 24px;
-    }
-
-    .feature {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 28px;
-      transition: border-color 0.15s;
-    }
-    .feature:hover { border-color: #333; }
-
-    .feature-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      margin-bottom: 16px;
-      background: #1a1a2e;
-    }
-
-    .feature h3 {
-      font-size: 17px;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-
-    .feature p {
-      color: var(--text-dim);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    /* Architecture */
-    .architecture {
-      padding: 80px 0;
-      border-top: 1px solid var(--border);
-    }
-
-    .architecture h2 {
-      font-size: 32px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      letter-spacing: -0.5px;
-    }
-
-    .architecture > p {
-      color: var(--text-dim);
-      font-size: 17px;
-      max-width: 640px;
-      margin-bottom: 48px;
-    }
-
-    .arch-diagram {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 32px;
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-      font-size: 13px;
+      font-size: 16px;
+      max-width: 600px;
+      margin-bottom: 40px;
       line-height: 1.6;
-      overflow-x: auto;
-      white-space: pre;
-      color: var(--text-dim);
     }
 
-    .arch-diagram .hl { color: var(--accent); }
-    .arch-diagram .gr { color: var(--green); }
-    .arch-diagram .dm { color: var(--text-dim); }
-
-    /* Phases */
-    .phases {
-      padding: 80px 0;
-      border-top: 1px solid var(--border);
-    }
-
-    .phases h2 {
-      font-size: 32px;
-      font-weight: 600;
-      margin-bottom: 48px;
-      letter-spacing: -0.5px;
-    }
-
-    .phase-list {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .phase {
-      display: flex;
-      gap: 16px;
-      align-items: flex-start;
-      padding: 20px 24px;
+    /* ── Code blocks ── */
+    .code {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
-    }
-
-    .phase-number {
-      flex-shrink: 0;
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 600;
-    }
-
-    .phase-done .phase-number {
-      background: #052e16;
-      color: var(--green);
-    }
-
-    .phase-done { border-color: #14532d; }
-
-    .phase h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-    .phase p { font-size: 13px; color: var(--text-dim); }
-
-    .phase-check { color: var(--green); font-size: 13px; font-weight: 500; margin-left: auto; white-space: nowrap; }
-
-    /* Code example */
-    .code-section {
-      padding: 80px 0;
-      border-top: 1px solid var(--border);
-    }
-
-    .code-section h2 {
-      font-size: 32px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      letter-spacing: -0.5px;
-    }
-
-    .code-section > p {
-      color: var(--text-dim);
-      font-size: 17px;
-      max-width: 640px;
-      margin-bottom: 48px;
-    }
-
-    .code-tabs {
-      display: flex;
-      gap: 0;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 0;
-    }
-
-    .code-tab {
-      padding: 10px 20px;
-      font-size: 13px;
-      color: var(--text-dim);
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      transition: all 0.15s;
-      background: none;
-      border-top: none;
-      border-left: none;
-      border-right: none;
-      font-family: inherit;
-    }
-    .code-tab:hover { color: var(--text); }
-    .code-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-
-    .code-block {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-top: none;
-      border-radius: 0 0 12px 12px;
       padding: 24px;
-      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
       font-size: 13px;
       line-height: 1.7;
       overflow-x: auto;
-      display: none;
-    }
-    .code-block.active { display: block; }
-
-    .code-block .kw { color: #c084fc; }
-    .code-block .fn { color: #60a5fa; }
-    .code-block .str { color: #86efac; }
-    .code-block .cm { color: #555; }
-    .code-block .num { color: #fbbf24; }
-
-    /* Stats */
-    .stats {
-      padding: 80px 0;
-      border-top: 1px solid var(--border);
+      white-space: pre;
     }
 
+    .code .kw { color: #c084fc; }
+    .code .fn { color: #60a5fa; }
+    .code .str { color: #86efac; }
+    .code .cm { color: #555; }
+    .code .num { color: #fbbf24; }
+    .code .type { color: #f472b6; }
+
+    /* ── Feature sections ── */
+    .feature-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: start;
+    }
+
+    .feature-text h3 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .feature-text p {
+      color: var(--text-dim);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+
+    .feature-text .detail {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.5;
+    }
+
+    /* ── Network section ── */
+    .network-box {
+      background: linear-gradient(135deg, #0a0a1a 0%, #111 100%);
+      border: 1px solid var(--accent-dim);
+      border-radius: 14px;
+      padding: 40px;
+      margin-top: 40px;
+    }
+
+    .network-box h3 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .network-box p {
+      color: var(--text-dim);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 20px;
+      max-width: 600px;
+    }
+
+    .signal-example {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 28px;
+    }
+
+    .signal-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 20px;
+    }
+
+    .signal-card h4 {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+
+    .signal-card.sent h4 { color: var(--accent); }
+    .signal-card.never h4 { color: #ef4444; }
+
+    .signal-card code {
+      font-size: 12px;
+      color: var(--text-dim);
+      display: block;
+      line-height: 1.6;
+    }
+
+    /* ── Stats ── */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(4, 1fr);
       gap: 24px;
       text-align: center;
     }
 
     .stat-value {
-      font-size: 40px;
+      font-size: 36px;
       font-weight: 700;
       letter-spacing: -1px;
       color: var(--accent);
     }
 
     .stat-label {
-      font-size: 14px;
+      font-size: 13px;
       color: var(--text-dim);
       margin-top: 4px;
     }
 
-    /* CTA */
+    /* ── CTA ── */
     .cta {
       padding: 100px 0;
       text-align: center;
@@ -392,7 +307,7 @@
     }
 
     .cta h2 {
-      font-size: 36px;
+      font-size: 32px;
       font-weight: 700;
       margin-bottom: 16px;
       letter-spacing: -0.5px;
@@ -400,11 +315,11 @@
 
     .cta p {
       color: var(--text-dim);
-      font-size: 17px;
+      font-size: 16px;
       margin-bottom: 32px;
     }
 
-    /* Footer */
+    /* ── Footer ── */
     footer {
       padding: 40px 0;
       border-top: 1px solid var(--border);
@@ -412,16 +327,17 @@
       color: var(--text-dim);
       font-size: 13px;
     }
-
     footer a { color: var(--text-dim); text-decoration: none; }
     footer a:hover { color: var(--text); }
 
-    @media (max-width: 640px) {
-      .hero { padding: 80px 0 60px; }
-      .pitch, .architecture, .phases, .code-section, .stats { padding: 60px 0; }
-      .features { grid-template-columns: 1fr; }
-      .phase { flex-direction: column; }
-      .phase-check { margin-left: 0; }
+    /* ── Responsive ── */
+    @media (max-width: 720px) {
+      .hero { padding: 80px 0 40px; }
+      .section { padding: 60px 0; }
+      .feature-row { grid-template-columns: 1fr; gap: 24px; }
+      .signal-example { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .network-box { padding: 28px; }
     }
   </style>
 </head>
@@ -430,15 +346,16 @@
   <!-- Hero -->
   <section class="hero">
     <div class="container">
-      <div class="hero-badge">Open Source &middot; MIT License &middot; Zero Dependencies</div>
-      <h1>Your data is <span>scattered</span>.<br>dpth connects it.</h1>
-      <p>Your app talks to Stripe, GitHub, HubSpot, and a dozen other APIs. dpth is a TypeScript library that resolves entities across sources, detects cross-source patterns, and gives every data point a history — so you can stop writing join queries and start finding insights.</p>
+      <div class="hero-badge">v0.4.0 &middot; MIT License &middot; Zero Dependencies</div>
+      <h1>Agents forget.<br><span class="hl">dpth remembers.</span></h1>
+      <p class="sub">Every agent encounters the same entities — people, companies, products — scattered across APIs, documents, and conversations. dpth gives your agent structured memory that persists, connects, and learns.</p>
       <div class="hero-actions">
         <a href="https://github.com/rightclickable420/dpth" class="btn btn-primary">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           GitHub
         </a>
-        <a href="https://github.com/rightclickable420/dpth/blob/main/PROTOCOL.md" class="btn btn-secondary">Protocol Spec</a>
+        <a href="https://www.npmjs.com/package/dpth" class="btn btn-ghost">npm</a>
+        <a href="https://github.com/rightclickable420/dpth/blob/main/PROTOCOL.md" class="btn btn-ghost">Protocol</a>
       </div>
     </div>
   </section>
@@ -446,273 +363,229 @@
   <!-- Install -->
   <section class="install">
     <div class="container">
-      <div class="install-box" onclick="navigator.clipboard.writeText('npm install dpth'); this.querySelector('.copy').textContent = 'copied!'">
+      <div class="install-box mono" onclick="navigator.clipboard.writeText('npm install dpth'); this.querySelector('.copy').textContent = 'copied!'">
         <span class="prompt">$</span> npm install dpth <span class="copy">click to copy</span>
       </div>
     </div>
   </section>
 
-  <!-- Features -->
-  <section class="pitch">
+  <!-- ═══ Feature 1: Entity Resolution ═══ -->
+  <section class="section">
     <div class="container">
-      <h2>What you get</h2>
-      <p>One <code style="background:#1a1a2e;padding:2px 6px;border-radius:4px;font-size:15px;">npm install dpth</code> and your app understands its own data. No database required — it runs in-memory or persists to any store you want.</p>
-
-      <div class="features">
-        <div class="feature">
-          <div class="feature-icon">🧬</div>
-          <h3>Entity Resolution</h3>
-          <p><strong>john@company.com</strong> in Stripe and <strong>jsmith</strong> on GitHub are the same person. dpth figures that out automatically — no join queries, no manual mapping.</p>
+      <div class="section-label">Entity Resolution</div>
+      <div class="feature-row">
+        <div class="feature-text">
+          <h3>Same person. Ten different places. One record.</h3>
+          <p>Your agent reads a Stripe charge from <strong>john@company.com</strong>, a GitHub commit by <strong>jsmith</strong>, and a support ticket from <strong>John Smith</strong>. Are these the same person?</p>
+          <p>dpth resolves that automatically — fuzzy name matching, email matching, alias tracking, confidence scoring. One entity, all sources attached.</p>
+          <p class="detail">Works with any entity type: people, companies, products, merchants, legal entities — or define your own. Open type system, not a closed enum.</p>
         </div>
-
-        <div class="feature">
-          <div class="feature-icon">🔗</div>
-          <h3>Cross-Source Patterns</h3>
-          <p>Revenue went up 20% the same month commits doubled. Your biggest customer just opened 3 support tickets. dpth finds these connections across any data sources you feed it.</p>
-        </div>
-
-        <div class="feature">
-          <div class="feature-icon">⏱</div>
-          <h3>Temporal History</h3>
-          <p>Every value you track gets a full timeline. Not just "MRR is $50K" but "$30K &rarr; $42K &rarr; $50K over 3 months" with automatic change detection and diffing.</p>
-        </div>
-
-        <div class="feature">
-          <div class="feature-icon">📦</div>
-          <h3>Content-Addressed Storage</h3>
-          <p>SHA-256 hashed chunks that never change. Cache forever, deduplicate automatically. Like git for your data — every version is immutable and addressable.</p>
-        </div>
-
-        <div class="feature">
-          <div class="feature-icon">🤖</div>
-          <h3>Agent-Ready</h3>
-          <p>Built for AI agents that need structured memory. Full SDK for agents to register, contribute resources, and earn credits. Your agent gets smarter the more data it processes.</p>
-        </div>
-
-        <div class="feature">
-          <div class="feature-icon">⚡</div>
-          <h3>Zero Dependencies</h3>
-          <p>Pure TypeScript, 59KB, runs anywhere Node runs. ESM with subpath exports — import only the modules you need. No database, no runtime, no config.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Architecture -->
-  <section class="architecture">
-    <div class="container">
-      <h2>How it fits together</h2>
-      <p>dpth sits between your application and raw data. It works locally out of the box, and optionally scales to a distributed agent network.</p>
-      <div class="arch-diagram"><span class="dm">┌─────────────────────────────────────────────────┐</span>
-<span class="dm">│</span>                  <span class="hl">Applications</span>                    <span class="dm">│</span>
-<span class="dm">│</span>          <span class="dm">(your app, any client)</span>               <span class="dm">│</span>
-<span class="dm">├─────────────────────────────────────────────────┤</span>
-<span class="dm">│</span>                   <span class="hl">dpth.io</span>                        <span class="dm">│</span>
-<span class="dm">│</span>  <span class="gr">Intelligence</span>   <span class="gr">Inference</span>    <span class="gr">Federation</span>        <span class="dm">│</span>
-<span class="dm">│</span>  <span class="gr">  Layer</span>        <span class="gr">Routing</span>     <span class="gr"> Learning</span>          <span class="dm">│</span>
-<span class="dm">│</span>  <span class="gr">Entity</span>  <span class="gr">Model</span>    <span class="gr">Credit</span>     <span class="gr">Reputation</span>      <span class="dm">│</span>
-<span class="dm">│</span>  <span class="gr">Resolution</span>  <span class="gr">Registry</span>  <span class="gr">Economics</span>   <span class="gr">& Rewards</span>     <span class="dm">│</span>
-<span class="dm">├─────────────────────────────────────────────────┤</span>
-<span class="dm">│</span>              <span class="hl">Agent Network</span> <span class="dm">(P2P)</span>                 <span class="dm">│</span>
-<span class="dm">│</span>     <span class="dm">Storage │ Compute │ GPU │ Training</span>        <span class="dm">│</span>
-<span class="dm">└─────────────────────────────────────────────────┘</span></div>
-    </div>
-  </section>
-
-  <!-- Phases -->
-  <section class="phases">
-    <div class="container">
-      <h2>What's built (all of it)</h2>
-      <div class="phase-list">
-        <div class="phase phase-done">
-          <div class="phase-number">1</div>
-          <div>
-            <h3>Core Infrastructure</h3>
-            <p>Entity resolution, correlation engine, temporal data, content-addressed storage</p>
-          </div>
-          <span class="phase-check">Complete</span>
-        </div>
-        <div class="phase phase-done">
-          <div class="phase-number">2</div>
-          <div>
-            <h3>Agent Network</h3>
-            <p>Registration, storage/compute/GPU contributions, reputation system, storage proofs</p>
-          </div>
-          <span class="phase-check">Complete</span>
-        </div>
-        <div class="phase phase-done">
-          <div class="phase-number">3</div>
-          <div>
-            <h3>Distributed Inference</h3>
-            <p>Model registry, smart routing, SSE streaming, centralized fallback</p>
-          </div>
-          <span class="phase-check">Complete</span>
-        </div>
-        <div class="phase phase-done">
-          <div class="phase-number">4</div>
-          <div>
-            <h3>Federated Learning</h3>
-            <p>Training coordination, LoRA weight deltas, Byzantine-tolerant aggregation, differential privacy</p>
-          </div>
-          <span class="phase-check">Complete</span>
-        </div>
-        <div class="phase phase-done">
-          <div class="phase-number">5</div>
-          <div>
-            <h3>Economics</h3>
-            <p>Credit earn/spend/transfer, tier rate limiting, dynamic pricing, migration snapshots</p>
-          </div>
-          <span class="phase-check">Complete</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Code Examples -->
-  <section class="code-section">
-    <div class="container">
-      <h2>See for yourself</h2>
-      <p>Four modules, four real use cases. Copy-paste into your project and go.</p>
-
-      <div class="code-tabs">
-        <button class="code-tab active" onclick="showTab('quick')">Quick Start</button>
-        <button class="code-tab" onclick="showTab('temporal')">Temporal History</button>
-        <button class="code-tab" onclick="showTab('persist')">Persistence</button>
-        <button class="code-tab" onclick="showTab('agent')">Agent Network</button>
-      </div>
-
-      <div class="code-block active" id="tab-quick">
+        <div class="code">
 <span class="kw">import</span> { dpth } <span class="kw">from</span> <span class="str">'dpth/dpth'</span>;
 
 <span class="kw">const</span> db = <span class="fn">dpth</span>();
 
-<span class="cm">// Same person in Stripe and GitHub → merged automatically</span>
-<span class="kw">await</span> db.entity.<span class="fn">resolve</span>(<span class="str">'person'</span>, <span class="str">'John Smith'</span>, <span class="str">'stripe'</span>, <span class="str">'cus_123'</span>, {
+<span class="cm">// Stripe customer</span>
+<span class="kw">await</span> db.entity.<span class="fn">resolve</span>({
+  type: <span class="str">'person'</span>,
+  name: <span class="str">'John Smith'</span>,
+  source: <span class="str">'stripe'</span>,
+  externalId: <span class="str">'cus_123'</span>,
   email: <span class="str">'john@company.com'</span>
 });
-<span class="kw">await</span> db.entity.<span class="fn">resolve</span>(<span class="str">'person'</span>, <span class="str">'jsmith'</span>, <span class="str">'github'</span>, <span class="str">'jsmith-gh'</span>, {
-  email: <span class="str">'john@company.com'</span>
-});
-<span class="cm">// ^ auto-merged — one entity, two sources</span>
 
-<span class="cm">// Track metrics, dpth finds correlations</span>
+<span class="cm">// GitHub contributor</span>
+<span class="kw">await</span> db.entity.<span class="fn">resolve</span>({
+  type: <span class="str">'person'</span>,
+  name: <span class="str">'jsmith'</span>,
+  source: <span class="str">'github'</span>,
+  externalId: <span class="str">'jsmith-gh'</span>,
+  email: <span class="str">'john@company.com'</span>
+});
+<span class="cm">// → auto-merged. One entity, two sources.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Feature 2: Temporal History ═══ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label">Temporal History</div>
+      <div class="feature-row">
+        <div class="feature-text">
+          <h3>Every value has a timeline. Nothing is overwritten.</h3>
+          <p>Most databases give you the current value. dpth gives you every version — when it changed, what it was before, and what's different now.</p>
+          <p>Automatic diffing, time-travel queries, and change detection built in. Your agent can answer "what changed since last Tuesday?" without you building anything.</p>
+          <p class="detail">Snapshots are immutable and content-addressed (SHA-256). Cache forever, deduplicate automatically.</p>
+        </div>
+        <div class="code">
+<span class="cm">// Snapshot your data — every version is saved</span>
+<span class="kw">await</span> db.temporal.<span class="fn">snapshot</span>(<span class="str">'dashboard'</span>, {
+  revenue: <span class="num">50000</span>,
+  users: <span class="num">200</span>
+});
+
+<span class="cm">// ... time passes ...</span>
+<span class="kw">await</span> db.temporal.<span class="fn">snapshot</span>(<span class="str">'dashboard'</span>, {
+  revenue: <span class="num">55000</span>,
+  users: <span class="num">220</span>
+});
+
+<span class="cm">// What changed?</span>
+<span class="kw">const</span> history = <span class="kw">await</span> db.temporal.<span class="fn">history</span>(<span class="str">'dashboard'</span>);
+<span class="kw">const</span> diff = db.temporal.<span class="fn">diff</span>(history[<span class="num">0</span>], history[<span class="num">1</span>]);
+<span class="cm">// → revenue: 50000 → 55000, users: 200 → 220</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Feature 3: Cross-Source Patterns ═══ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label">Cross-Source Patterns</div>
+      <div class="feature-row">
+        <div class="feature-text">
+          <h3>Hidden connections your agent would never think to look for.</h3>
+          <p>Revenue went up 20% the same month deploys doubled. Your biggest customer opened 3 support tickets right before churning. A product mention spiked the day after a conference.</p>
+          <p>dpth tracks metrics from any source and finds correlations automatically — Pearson coefficient, lag detection, trend alignment. Your agent spots patterns across data it's never explicitly connected.</p>
+          <p class="detail">Capped at 10K data points per metric. Automatic memory management — no unbounded growth.</p>
+        </div>
+        <div class="code">
+<span class="cm">// Track metrics from anywhere</span>
 <span class="kw">await</span> db.correlation.<span class="fn">track</span>(<span class="str">'mrr'</span>, <span class="num">50000</span>);
 <span class="kw">await</span> db.correlation.<span class="fn">track</span>(<span class="str">'deploys'</span>, <span class="num">12</span>);
+<span class="kw">await</span> db.correlation.<span class="fn">track</span>(<span class="str">'support_tickets'</span>, <span class="num">8</span>);
+
+<span class="cm">// What correlates with revenue?</span>
 <span class="kw">const</span> patterns = <span class="kw">await</span> db.correlation.<span class="fn">find</span>(<span class="str">'mrr'</span>);
-      </div>
+<span class="cm">// → deploys correlates with mrr</span>
+<span class="cm">//   (r=0.87, 3-day lag)</span>
 
-      <div class="code-block" id="tab-temporal">
-<span class="kw">import</span> { dpth } <span class="kw">from</span> <span class="str">'dpth/dpth'</span>;
-
-<span class="kw">const</span> db = <span class="fn">dpth</span>();
-
-<span class="cm">// Snapshot your data — every version is saved</span>
-<span class="kw">await</span> db.temporal.<span class="fn">snapshot</span>(<span class="str">'dashboard'</span>, { revenue: <span class="num">50000</span>, users: <span class="num">200</span> });
-<span class="cm">// ... time passes ...</span>
-<span class="kw">await</span> db.temporal.<span class="fn">snapshot</span>(<span class="str">'dashboard'</span>, { revenue: <span class="num">55000</span>, users: <span class="num">220</span> });
-
-<span class="cm">// Full timeline</span>
-<span class="kw">const</span> history = <span class="kw">await</span> db.temporal.<span class="fn">history</span>(<span class="str">'dashboard'</span>);
-
-<span class="cm">// Automatic diffing — what changed?</span>
-<span class="kw">const</span> diff = db.temporal.<span class="fn">diff</span>(history[<span class="num">0</span>], history[<span class="num">1</span>]);
-<span class="cm">// { changed: [{ key: 'revenue', from: 50000, to: 55000 }] }</span>
-
-<span class="cm">// Time travel — what did it look like last Tuesday?</span>
-<span class="kw">const</span> past = <span class="kw">await</span> db.temporal.<span class="fn">at</span>(<span class="str">'dashboard'</span>, <span class="kw">new</span> Date(<span class="str">'2025-01-15'</span>));
-      </div>
-
-      <div class="code-block" id="tab-persist">
-<span class="cm">// Default: in-memory (zero config)</span>
-<span class="kw">const</span> db = <span class="fn">dpth</span>();
-
-<span class="cm">// Add SQLite: survives restarts</span>
-<span class="kw">import</span> { SQLiteAdapter } <span class="kw">from</span> <span class="str">'dpth/adapter-sqlite'</span>;
-<span class="kw">import</span> { configure } <span class="kw">from</span> <span class="str">'dpth/storage'</span>;
-<span class="fn">configure</span>({ adapter: <span class="kw">new</span> <span class="fn">SQLiteAdapter</span>(<span class="str">'./myapp.db'</span>) });
-
-<span class="cm">// Add vectors: semantic search on top of SQLite</span>
-<span class="kw">import</span> { VectorOverlay } <span class="kw">from</span> <span class="str">'dpth/adapter-vector'</span>;
-<span class="fn">configure</span>({
-  adapter: <span class="kw">new</span> <span class="fn">VectorOverlay</span>(
-    <span class="kw">new</span> <span class="fn">SQLiteAdapter</span>(<span class="str">'./myapp.db'</span>)
-  )
-});
-
-<span class="cm">// Or write your own — implement StorageAdapter</span>
-<span class="cm">// for Redis, DuckDB, S3, anything</span>
-      </div>
-
-      <div class="code-block" id="tab-agent">
-<span class="kw">import</span> { DpthAgent } <span class="kw">from</span> <span class="str">'dpth/agent-sdk'</span>;
-
-<span class="kw">const</span> agent = <span class="kw">new</span> <span class="fn">DpthAgent</span>({
-  name: <span class="str">'my-agent'</span>,
-  apiUrl: <span class="str">'https://your-instance/api/dpth'</span>,
-  capabilities: {
-    storageCapacityMb: <span class="num">10000</span>,
-    cpuCores: <span class="num">8</span>,
-    hasGpu: <span class="kw">true</span>,
-    gpuVramMb: <span class="num">24576</span>,
-    taskTypes: [<span class="str">'embed'</span>, <span class="str">'inference'</span>, <span class="str">'train'</span>]
-  }
-});
-
-<span class="cm">// Join the network — contribute resources, earn credits</span>
-<span class="kw">await</span> agent.<span class="fn">register</span>();
-<span class="kw">await</span> agent.<span class="fn">startWorking</span>();
+<span class="cm">// Feed data from any source — APIs, PDFs,</span>
+<span class="cm">// emails, conversations — dpth finds the</span>
+<span class="cm">// connections you'd never think to query.</span>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- Stats -->
-  <section class="stats">
+  <!-- ═══ Persistence ═══ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label">Storage</div>
+      <h2>In-memory by default. Persistent when you need it.</h2>
+      <p class="desc">Zero config to start — runs in-memory for scripts, testing, and serverless. Add SQLite for persistence that survives restarts. Layer on vector search for semantic similarity. Or write your own adapter.</p>
+      <div class="code">
+<span class="cm">// Default: in-memory — zero config, zero deps</span>
+<span class="kw">const</span> db = <span class="fn">dpth</span>();
+
+<span class="cm">// Persistent: add SQLite (npm install better-sqlite3)</span>
+<span class="kw">import</span> { SQLiteAdapter } <span class="kw">from</span> <span class="str">'dpth/adapter-sqlite'</span>;
+<span class="kw">const</span> db = <span class="fn">dpth</span>({ adapter: <span class="kw">new</span> <span class="fn">SQLiteAdapter</span>(<span class="str">'./memory.db'</span>) });
+
+<span class="cm">// Semantic: add vector search on top</span>
+<span class="kw">import</span> { VectorOverlay } <span class="kw">from</span> <span class="str">'dpth/adapter-vector'</span>;
+<span class="kw">const</span> db = <span class="fn">dpth</span>({
+  adapter: <span class="kw">new</span> <span class="fn">VectorOverlay</span>(<span class="kw">new</span> <span class="fn">SQLiteAdapter</span>(<span class="str">'./memory.db'</span>))
+});
+
+<span class="cm">// Custom: implement StorageAdapter for any backend</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ The Network (Waze Layer) ═══ -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label">The Network</div>
+      <h2>Waze, but for identity resolution.</h2>
+      <p class="desc">Every dpth instance solves entity matching locally. With one flag, it also contributes what it learns — anonymized calibration signals — to a shared network. Every agent gets better at resolving entities because every other agent already made the mistakes.</p>
+
+      <div class="network-box">
+        <h3>One flag. Zero PII.</h3>
+        <p>When you enable the network, dpth sends statistical signals about which matching strategies work — not your data. Think: "email matching between Stripe and GitHub on generic domains has a 15% false-merge rate." No names. No emails. No entity data. Ever.</p>
+
+        <div class="code" style="margin-bottom: 24px;">
+<span class="cm">// Opt in. That's it.</span>
+<span class="kw">const</span> db = <span class="fn">dpth</span>({ network: <span class="kw">true</span> });
+
+<span class="cm">// Every resolution now contributes calibration signals.</span>
+<span class="cm">// Your agent gets back improved confidence scores</span>
+<span class="cm">// trained on the entire network's experience.</span>
+<span class="kw">await</span> db.entity.<span class="fn">resolve</span>({
+  type: <span class="str">'person'</span>,
+  name: <span class="str">'Jane Doe'</span>,
+  source: <span class="str">'hubspot'</span>,
+  externalId: <span class="str">'contact_456'</span>,
+  email: <span class="str">'jane@gmail.com'</span>
+});
+<span class="cm">// → confidence adjusted by network: gmail = generic</span>
+<span class="cm">//   domain, lower trust on email-only matches</span>
+        </div>
+
+        <div class="signal-example">
+          <div class="signal-card sent">
+            <h4>What's sent</h4>
+            <code>{
+  "schema": "stripe+github",
+  "rule": "email_match",
+  "modifier": "generic_domain",
+  "confidence": 0.62,
+  "false_merge_rate": 0.15
+}</code>
+          </div>
+          <div class="signal-card never">
+            <h4>What's never sent</h4>
+            <code>Names, emails, entity IDs,
+source data, attributes,
+aliases, or any PII.
+
+The network learns patterns,
+not people.</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Stats ═══ -->
+  <section class="section">
     <div class="container">
       <div class="stats-grid">
         <div>
-          <div class="stat-value">15</div>
-          <div class="stat-label">Modules</div>
-        </div>
-        <div>
-          <div class="stat-value">171</div>
+          <div class="stat-value">69</div>
           <div class="stat-label">Tests Passing</div>
         </div>
         <div>
-          <div class="stat-value">79KB</div>
+          <div class="stat-value">90KB</div>
           <div class="stat-label">Package Size</div>
         </div>
         <div>
           <div class="stat-value">0</div>
           <div class="stat-label">Dependencies</div>
         </div>
+        <div>
+          <div class="stat-value">v0.4.0</div>
+          <div class="stat-label">Latest Release</div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- OpenClaw Skill -->
-  <section class="pitch" style="text-align: center;">
-    <div class="container">
-      <h2>Give your agent structured memory</h2>
-      <p style="margin: 0 auto 32px;">Running an <a href="https://github.com/openclaw/openclaw" style="color: var(--accent); text-decoration: none;">OpenClaw</a> agent? Install the dpth skill and your agent can resolve entities, track temporal data, and find cross-source patterns — out of the box.</p>
-      <a href="https://github.com/rightclickable420/dpth/raw/main/dpth.skill" class="btn btn-primary" style="font-size: 17px; padding: 14px 32px;">
-        Download dpth.skill
-      </a>
-      <p style="color: var(--text-dim); font-size: 13px; margin-top: 16px;">8.8KB — entity resolution, correlation, temporal data, inference, federation, economics</p>
-    </div>
-  </section>
-
-  <!-- CTA -->
+  <!-- ═══ CTA ═══ -->
   <section class="cta">
     <div class="container">
-      <h2>Stop writing join queries.<br>Start finding insights.</h2>
-      <p>MIT licensed. Zero dependencies. Works anywhere Node runs.</p>
+      <h2>Give your agent a memory.</h2>
+      <p>MIT licensed. Zero dependencies. Works anywhere Node runs.<br>Opt into the network when you're ready.</p>
       <div class="hero-actions">
         <a href="https://github.com/rightclickable420/dpth" class="btn btn-primary">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           Star on GitHub
         </a>
-        <a href="https://www.npmjs.com/package/dpth" class="btn btn-secondary">npm package</a>
-        <a href="https://github.com/rightclickable420/dpth/blob/main/PROTOCOL.md" class="btn btn-secondary">Protocol Spec</a>
+        <a href="https://www.npmjs.com/package/dpth" class="btn btn-ghost">npm install dpth</a>
+        <a href="https://github.com/rightclickable420/dpth/blob/main/PROTOCOL.md" class="btn btn-ghost">Read the Protocol</a>
       </div>
     </div>
   </section>
@@ -723,15 +596,6 @@
       <a href="https://github.com/rightclickable420/dpth">dpth.io</a> &middot; MIT License &middot; Built by humans and agents
     </div>
   </footer>
-
-  <script>
-    function showTab(name) {
-      document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.code-block').forEach(b => b.classList.remove('active'));
-      event.target.classList.add('active');
-      document.getElementById('tab-' + name).classList.add('active');
-    }
-  </script>
 
 </body>
 </html>

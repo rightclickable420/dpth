@@ -1,18 +1,20 @@
-# dpth.io
+# dpth
 
 [![CI](https://github.com/rightclickable420/dpth/actions/workflows/ci.yml/badge.svg)](https://github.com/rightclickable420/dpth/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dpth)](https://www.npmjs.com/package/dpth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**Your data is scattered. dpth connects it.**
+**Structured memory for AI agents.** Entity resolution, temporal history, and cross-source pattern detection — with an opt-in network that makes every agent smarter.
 
-dpth is a TypeScript library that resolves entities across APIs, detects cross-source patterns, and gives every data point a history. One `npm install`, zero dependencies, works anywhere Node runs.
+Your agent encounters the same person in Stripe, GitHub, and HubSpot. It reads the same company name in a contract, a support ticket, and an invoice. Most agents start from zero every time. dpth remembers.
 
 ## Install
 
 ```bash
 npm install dpth
 ```
+
+Zero dependencies. 90KB. Works anywhere Node runs.
 
 ## Quick Start
 
@@ -21,65 +23,109 @@ import { dpth } from 'dpth/dpth';
 
 const db = dpth();
 
-// Entity resolution — same person in Stripe and GitHub? Merged automatically.
-await db.entity.resolve('person', 'John Smith', 'stripe', 'cus_123', {
+// Entity resolution — same person across sources, merged automatically
+await db.entity.resolve({
+  type: 'person',
+  name: 'John Smith',
+  source: 'stripe',
+  externalId: 'cus_123',
   email: 'john@company.com'
 });
-await db.entity.resolve('person', 'jsmith', 'github', 'jsmith-gh', {
+
+await db.entity.resolve({
+  type: 'person',
+  name: 'jsmith',
+  source: 'github',
+  externalId: 'jsmith-gh',
   email: 'john@company.com'
 });
-// ^ auto-merged — same entity, two sources
+// → auto-merged. One entity, two sources.
 
 // Temporal history — every value has a timeline
 await db.temporal.snapshot('dashboard', { revenue: 50000, users: 200 });
 await db.temporal.snapshot('dashboard', { revenue: 55000, users: 220 });
 const history = await db.temporal.history('dashboard');
 const diff = db.temporal.diff(history[0], history[1]);
-// { changed: [{ key: 'revenue', from: 50000, to: 55000 }, ...] }
+// → { changed: [{ key: 'revenue', from: 50000, to: 55000 }, ...] }
 
-// Correlation — finds patterns you'd never think to look for
+// Correlation — find patterns you'd never think to look for
 await db.correlation.track('mrr', 50000);
 await db.correlation.track('deploys', 12);
 const patterns = await db.correlation.find('mrr');
-// "deploys correlates with mrr (r=0.87, 3-day lag)"
-```
-
-## Add Persistence
-
-```typescript
-// In-memory by default (great for testing, serverless, scripts)
-const db = dpth();
-
-// Add SQLite for persistence — survives restarts
-// npm install better-sqlite3
-import { SQLiteAdapter } from 'dpth/adapter-sqlite';
-import { configure } from 'dpth/storage';
-configure({ adapter: new SQLiteAdapter('./myapp.db') });
-
-// Add vector search — semantic similarity on top
-import { VectorOverlay } from 'dpth/adapter-vector';
-configure({ adapter: new VectorOverlay(new SQLiteAdapter('./myapp.db')) });
+// → "deploys correlates with mrr (r=0.87, 3-day lag)"
 ```
 
 ## What You Get
 
 ### Entity Resolution
-`john@company.com` in Stripe and `jsmith` on GitHub are the same person. dpth figures that out automatically — fuzzy name matching, email matching, alias tracking, confidence scoring.
+`john@company.com` in Stripe and `jsmith` on GitHub are the same person. dpth figures that out automatically — fuzzy name matching, email matching, alias tracking, confidence scoring. Works with any entity type: people, companies, products, merchants — or define your own.
 
 ### Temporal History
-Every value you store has a full timeline. Not just "revenue is $50K" but "$30K → $42K → $50K over 3 months" with automatic change detection and diffing.
+Every value you store has a full timeline. Not just "revenue is $50K" but "$30K → $42K → $50K over 3 months" with automatic change detection, diffing, and time-travel queries.
 
 ### Cross-Source Correlation
-Revenue went up 20% the same month commits doubled? Your biggest customer just opened 3 support tickets? dpth finds these connections across any data sources you feed it. Pearson correlation, lag detection, anomaly alerts.
+Revenue went up 20% the same month commits doubled. Your biggest customer just opened 3 support tickets. dpth finds these connections — Pearson correlation, lag detection, anomaly alerts.
 
 ### Content-Addressed Storage
 SHA-256 hashed chunks. Immutable, deduplicated, cache forever. Like git for your data.
 
-### Vector Search
-Semantic similarity built in. Works with any embedding model — store vectors, search by similarity, power smarter entity matching.
+## Storage
 
-### Pluggable Storage
-Memory adapter (default, zero config) → SQLite adapter (persistence) → Vector overlay (semantic search). Or write your own — implement `StorageAdapter` for any backend.
+```typescript
+// Default: in-memory (zero config)
+const db = dpth();
+
+// Persistent: add SQLite (npm install better-sqlite3)
+import { SQLiteAdapter } from 'dpth/adapter-sqlite';
+const db = dpth({ adapter: new SQLiteAdapter('./memory.db') });
+
+// Semantic: vector search on top of SQLite
+import { VectorOverlay } from 'dpth/adapter-vector';
+const db = dpth({
+  adapter: new VectorOverlay(new SQLiteAdapter('./memory.db'))
+});
+
+// Custom: implement StorageAdapter for any backend
+```
+
+## The Network
+
+Waze, but for identity resolution.
+
+Every dpth instance solves entity matching locally. With one flag, it also contributes anonymized calibration signals to a shared network. No names, no emails, no PII — just statistical patterns about which matching strategies work and which ones don't.
+
+```typescript
+// Opt in. That's it.
+const db = dpth({ network: true });
+
+// Every resolution now contributes calibration signals.
+// Your agent gets back improved confidence scores
+// trained on the entire network's experience.
+await db.entity.resolve({
+  type: 'person',
+  name: 'Jane Doe',
+  source: 'hubspot',
+  externalId: 'contact_456',
+  email: 'jane@gmail.com'
+});
+// → confidence adjusted: gmail = generic domain,
+//   lower trust on email-only matches
+```
+
+**What's sent:**
+```json
+{
+  "schema": "stripe+github",
+  "rule": "email_match",
+  "modifier": "generic_domain",
+  "confidence": 0.62,
+  "false_merge_rate": 0.15
+}
+```
+
+**What's never sent:** Names, emails, entity IDs, source data, attributes, or any PII. The network learns patterns, not people.
+
+See [PROTOCOL.md](PROTOCOL.md) for the full network specification.
 
 ## Architecture
 
@@ -92,6 +138,9 @@ Memory adapter (default, zero config) → SQLite adapter (persistence) → Vecto
 ├──────────────────────────────────────────────┤
 │             Storage Adapter                   │
 │  Memory │ SQLite │ Vector │ Custom            │
+├──────────────────────────────────────────────┤
+│         Network (opt-in)                      │
+│  Calibration signals ↔ api.dpth.io            │
 └──────────────────────────────────────────────┘
 ```
 
@@ -99,7 +148,7 @@ Memory adapter (default, zero config) → SQLite adapter (persistence) → Vecto
 
 | Import | What it does |
 |--------|-------------|
-| `dpth/dpth` | Unified API — `dpth()` factory, entity/temporal/correlation/vector |
+| `dpth/dpth` | Unified API — `dpth()` factory with entity/temporal/correlation/vector |
 | `dpth/entity` | Standalone entity resolution |
 | `dpth/correlation` | Standalone correlation engine |
 | `dpth/temporal` | Standalone temporal storage |
@@ -107,40 +156,7 @@ Memory adapter (default, zero config) → SQLite adapter (persistence) → Vecto
 | `dpth/storage` | Adapter interface, `MemoryAdapter`, `configure()` |
 | `dpth/adapter-sqlite` | SQLite persistence adapter |
 | `dpth/adapter-vector` | Vector search adapter + overlay |
-| `dpth/agent-sdk` | Agent network participation |
-| `dpth/economics` | Credit earn/spend/transfer system |
-| `dpth/federation` | Federated learning coordination |
-| `dpth/fallback` | Centralized inference fallback |
-
-## Agent Network (Advanced)
-
-dpth also includes a protocol for distributed intelligence — agents contribute storage, compute, and GPU power, earn credits, and access shared inference. [See PROTOCOL.md](PROTOCOL.md) for the full spec.
-
-```typescript
-import { DpthAgent } from 'dpth/agent-sdk';
-
-const agent = new DpthAgent({
-  name: 'my-agent',
-  apiUrl: 'https://your-instance/api/dpth',
-  capabilities: {
-    storageCapacityMb: 10000,
-    cpuCores: 8,
-    hasGpu: true,
-    gpuVramMb: 24576,
-    taskTypes: ['embed', 'inference', 'train']
-  }
-});
-
-await agent.register();
-await agent.startWorking();
-```
-
-## Stats
-
-- **15 modules** — entity, correlation, temporal, embed, storage, adapters, agent-sdk, economics, federation, fallback
-- **171 tests** — smoke, integration, API routes, adapters, unified API
-- **79KB** packed — zero production dependencies
-- **5 phases complete** — core → agents → inference → federation → economics
+| `dpth/experimental` | Agent SDK, federation, economics (experimental) |
 
 ## Contributing
 
