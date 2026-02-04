@@ -47,6 +47,19 @@ export interface DpthOptions {
   adapter?: StorageAdapter;
   /** Path to SQLite database (convenience — creates SQLiteAdapter) */
   path?: string;
+  /** 
+   * Opt into the dpth network. Your agent contributes anonymized resolution
+   * signals (which matching rules work, how accurately) and gets back
+   * collective intelligence that improves matching for everyone.
+   * 
+   * No entity data, names, or emails are ever sent — only aggregate statistics
+   * about rule performance (e.g. "email matching is 98% accurate for stripe+github").
+   * 
+   * Default: false
+   */
+  network?: boolean;
+  /** Custom coordinator URL (default: https://api.dpth.io) */
+  coordinatorUrl?: string;
 }
 
 /** Object-style options for entity.resolve() */
@@ -102,6 +115,8 @@ export interface CorrelationHit {
 export class Dpth {
   private adapter: StorageAdapter;
   private _ready: Promise<void>;
+  /** Network signal tracker (when network: true) */
+  private _network: NetworkLayer | null = null;
   
   /** Entity resolution and management */
   public entity: EntityAPI;
@@ -115,7 +130,11 @@ export class Dpth {
   constructor(options: DpthOptions = {}) {
     this.adapter = options.adapter || new MemoryAdapter();
     
-    this.entity = new EntityAPI(this.adapter);
+    if (options.network) {
+      this._network = new NetworkLayer(options.coordinatorUrl);
+    }
+    
+    this.entity = new EntityAPI(this.adapter, this._network);
     this.temporal = new TemporalAPI(this.adapter);
     this.correlation = new CorrelationAPI(this.adapter);
     this.vector = new VectorAPI(this.adapter);
@@ -130,7 +149,7 @@ export class Dpth {
         const { SQLiteAdapter } = await import('./adapter-sqlite.js');
         this.adapter = new SQLiteAdapter(options.path);
         // Re-initialize APIs with the real adapter
-        this.entity = new EntityAPI(this.adapter);
+        this.entity = new EntityAPI(this.adapter, this._network);
         this.temporal = new TemporalAPI(this.adapter);
         this.correlation = new CorrelationAPI(this.adapter);
         this.vector = new VectorAPI(this.adapter);
@@ -138,6 +157,15 @@ export class Dpth {
         // SQLite not available, fall back to memory
         console.warn('dpth: better-sqlite3 not installed, using in-memory storage');
       }
+    }
+    
+    // Register with the network if enabled
+    if (this._network) {
+      await this._network.register().catch(() => {
+        // Network registration is best-effort — never block local functionality
+        console.warn('dpth: network registration failed, continuing in local-only mode');
+        this._network = null;
+      });
     }
   }
   
@@ -147,9 +175,13 @@ export class Dpth {
     return this;
   }
   
-  /** Close the database and flush any pending writes */
+  /** Close the database and flush any pending signals/writes */
   async close(): Promise<void> {
     await this._ready;
+    // Flush any pending resolution signals to the network
+    if (this._network) {
+      await this._network.flush().catch(() => {});
+    }
     await this.adapter.close();
   }
   
@@ -173,7 +205,7 @@ export class Dpth {
 // ─── Entity API ──────────────────────────────────────
 
 class EntityAPI {
-  constructor(private adapter: StorageAdapter) {}
+  constructor(private adapter: StorageAdapter, private network: NetworkLayer | null = null) {}
   
   /**
    * Resolve an entity — find existing match or create new.
@@ -291,6 +323,17 @@ class EntityAPI {
       await this.adapter.put('entities', entity.id, entity);
       await this.adapter.put('source_index', sKey, entity.id);
       await this.updateEmailIndex(entity);
+      
+      // Report successful merge to the network (non-blocking)
+      if (this.network) {
+        const existingSource = entity.sources[0]?.sourceId;
+        if (existingSource) {
+          const schema = [existingSource, resolvedSourceId].sort().join('+');
+          for (const rule of match.matchedOn) {
+            this.network.recordResolution(schema, rule, true);
+          }
+        }
+      }
       
       return { entity, isNew: false, confidence: match.score };
     }
@@ -445,7 +488,7 @@ class EntityAPI {
     name: string,
     email?: string,
     aliases?: string[]
-  ): Promise<{ entity: Entity; score: number } | null> {
+  ): Promise<{ entity: Entity; score: number; matchedOn: string[] } | null> {
     // ── Fast path: email index lookup (O(1) instead of O(n)) ──
     if (email) {
       const emailKey = email.toLowerCase();
@@ -453,7 +496,9 @@ class EntityAPI {
       if (entityId) {
         const entity = await this.adapter.get('entities', entityId) as Entity | undefined;
         if (entity && entity.type === type) {
-          return { entity, score: 0.9 + (entity.name.toLowerCase() === name.toLowerCase() ? 0.1 : 0) };
+          const matchedOn = ['email_exact'];
+          if (entity.name.toLowerCase() === name.toLowerCase()) matchedOn.push('name_exact');
+          return { entity, score: 0.9 + (matchedOn.includes('name_exact') ? 0.1 : 0), matchedOn };
         }
       }
     }
@@ -501,40 +546,46 @@ class EntityAPI {
       }
     }
     
-    let best: { entity: Entity; score: number } | null = null;
+    let best: { entity: Entity; score: number; matchedOn: string[] } | null = null;
     const searchTerms = [name.toLowerCase(), ...(aliases || []).map(a => a.toLowerCase())];
     if (email) searchTerms.push(email.toLowerCase());
     
     for (const entity of narrowed) {
       let score = 0;
+      const matchedOn: string[] = [];
       
       // Name matching
       const entityName = entity.name.toLowerCase();
       if (entityName === name.toLowerCase()) {
         score += 0.8;
+        matchedOn.push('name_exact');
       } else if (this.fuzzyScore(entityName, name.toLowerCase()) > 0.85) {
         score += 0.5;
+        matchedOn.push('name_fuzzy_high');
       } else if (this.fuzzyScore(entityName, name.toLowerCase()) > 0.7) {
         score += 0.3;
+        matchedOn.push('name_fuzzy_low');
       }
       
       // Email matching
       const entityEmail = entity.attributes['email']?.current as string | undefined;
       if (email && entityEmail && entityEmail.toLowerCase() === email.toLowerCase()) {
         score += 0.9;
+        matchedOn.push('email_exact');
       }
       
       // Alias matching
       for (const alias of entity.aliases) {
         if (searchTerms.includes(alias.toLowerCase())) {
           score += 0.3;
+          matchedOn.push('alias');
           break;
         }
       }
       
       score = Math.min(1, score);
       if (score > 0.3 && (!best || score > best.score)) {
-        best = { entity, score };
+        best = { entity, score, matchedOn };
       }
     }
     
@@ -824,6 +875,9 @@ class VectorAPI {
  * // Persistent (SQLite)
  * const db = await dpth('./myapp.db').ready();
  * 
+ * // Opt into the network — your resolutions improve everyone's matching
+ * const db = await dpth({ path: './app.db', network: true }).ready();
+ * 
  * // Custom adapter
  * const db = dpth({ adapter: new MemoryVectorAdapter() });
  */
@@ -832,4 +886,135 @@ export function dpth(pathOrOptions?: string | DpthOptions): Dpth {
     return new Dpth({ path: pathOrOptions });
   }
   return new Dpth(pathOrOptions);
+}
+
+// ─── Network Layer (The Waze Engine) ─────────────────
+
+const DEFAULT_COORDINATOR = 'https://api.dpth.io';
+const FLUSH_THRESHOLD = 50; // Flush after this many resolutions
+
+/**
+ * Tracks resolution outcomes locally, then periodically submits
+ * aggregated, anonymized signals to the dpth network.
+ * 
+ * Never sends entity data, names, emails, or any PII.
+ * Only sends: which matching rules work, how accurately, for which source combos.
+ */
+class NetworkLayer {
+  private coordinatorUrl: string;
+  private agentId: string | null = null;
+  
+  /** 
+   * Local accumulator: schema+rule → { truePositives, falsePositives, total }
+   * Flushed to the network when threshold is hit or on close().
+   */
+  private signals = new Map<string, {
+    schema: string;
+    rule: string;
+    truePositives: number;
+    falsePositives: number;
+    totalAttempts: number;
+  }>();
+  
+  private resolutionCount = 0;
+  
+  constructor(coordinatorUrl?: string) {
+    this.coordinatorUrl = coordinatorUrl || DEFAULT_COORDINATOR;
+  }
+  
+  /** Register this dpth instance as an agent on the network */
+  async register(): Promise<void> {
+    const res = await fetch(`${this.coordinatorUrl}/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicKey: `dpth-lib-${randomHex(8)}`,
+        capabilities: { storageCapacityMb: 0, cpuCores: 0, hasGpu: false },
+      }),
+    });
+    
+    if (!res.ok) throw new Error('Network registration failed');
+    const data = await res.json();
+    this.agentId = data.agent.id;
+  }
+  
+  /**
+   * Record a resolution outcome locally. Called by EntityAPI on every merge.
+   * No network call here — just accumulates stats in memory.
+   */
+  recordResolution(schema: string, rule: string, success: boolean): void {
+    const key = `${schema}:${rule}`;
+    let signal = this.signals.get(key);
+    
+    if (!signal) {
+      signal = { schema, rule, truePositives: 0, falsePositives: 0, totalAttempts: 0 };
+      this.signals.set(key, signal);
+    }
+    
+    signal.totalAttempts++;
+    if (success) {
+      signal.truePositives++;
+    } else {
+      signal.falsePositives++;
+    }
+    
+    this.resolutionCount++;
+    
+    // Auto-flush when we hit the threshold
+    if (this.resolutionCount >= FLUSH_THRESHOLD) {
+      this.flush().catch(() => {}); // Best-effort, never block
+    }
+  }
+  
+  /**
+   * Flush accumulated signals to the network.
+   * Called automatically every FLUSH_THRESHOLD resolutions, and on close().
+   */
+  async flush(): Promise<void> {
+    if (!this.agentId || this.signals.size === 0) return;
+    
+    const promises: Promise<void>[] = [];
+    
+    for (const signal of this.signals.values()) {
+      if (signal.totalAttempts < 1) continue; // Submit even small samples (network aggregates)
+      
+      promises.push(
+        fetch(`${this.coordinatorUrl}/signals`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentId: this.agentId,
+            ...signal,
+          }),
+        }).then(() => {}).catch(() => {}) // Best-effort
+      );
+    }
+    
+    await Promise.all(promises);
+    
+    // Reset accumulators
+    this.signals.clear();
+    this.resolutionCount = 0;
+  }
+  
+  /**
+   * Ask the network for calibration data on a matching rule.
+   * Used to improve local matching confidence thresholds.
+   */
+  async getCalibration(schema: string, rule: string): Promise<{
+    precision: number;
+    confidence: number;
+    contributorCount: number;
+  } | null> {
+    try {
+      const res = await fetch(
+        `${this.coordinatorUrl}/signals/calibrate?schema=${encodeURIComponent(schema)}&rule=${encodeURIComponent(rule)}`
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.calibration;
+    } catch {
+      return null;
+    }
+  }
 }

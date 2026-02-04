@@ -368,6 +368,52 @@ async function testFactory() {
 
 // ─── Run All ─────────────────────────────────────────
 
+// ─── Network Opt-In Tests ────────────────────────────
+
+async function testNetworkOptIn() {
+  console.log('\n🌐 Network Opt-In');
+  
+  // Create a network-enabled instance
+  const db = await dpth({ network: true }).ready();
+  
+  // Resolve some entities — signals should accumulate locally
+  await db.entity.resolve({
+    type: 'person',
+    name: 'Network Test User',
+    source: 'stripe',
+    externalId: 'cus_net_1',
+    email: 'nettest@example.com',
+  });
+  
+  // Same email from different source — triggers a merge
+  const { isNew } = await db.entity.resolve({
+    type: 'person',
+    name: 'Net Test User',
+    source: 'github',
+    externalId: 'nettest-gh',
+    email: 'nettest@example.com',
+  });
+  assert(isNew === false, 'network-enabled merge works locally');
+  
+  // Close flushes signals to the network
+  await db.close();
+  
+  // Verify signal was received by checking calibration
+  // Schema is sorted alphabetically: github+stripe
+  const res = await fetch('https://api.dpth.io/signals/calibrate?schema=github%2Bstripe&rule=email_exact');
+  const data = await res.json();
+  if (data.calibration) {
+    assert(true, 'signal reached the coordinator');
+    assert(data.calibration.precision > 0, `calibration precision: ${data.calibration.precision}`);
+  } else {
+    // Signal may not have arrived yet (network latency) — check signals list
+    const listRes = await fetch('https://api.dpth.io/signals');
+    const listData = await listRes.json();
+    const hasOurSchema = listData.signals.some((s: any) => s.schema === 'github+stripe');
+    assert(hasOurSchema, 'signal found in network signals list');
+  }
+}
+
 async function main() {
   console.log('━━━ dpth.io Unified API Tests ━━━');
   
@@ -378,6 +424,7 @@ async function main() {
   await testCorrelationAPI();
   await testVectorAPI();
   await testFactory();
+  await testNetworkOptIn();
   
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━`);
   
