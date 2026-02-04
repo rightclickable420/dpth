@@ -6,10 +6,14 @@
  * 
  * SIGNAL SECURITY MODEL:
  * - Individual signals are NEVER stored — only aggregated statistics
- * - Source registry: only recognized source identifiers in schemas
- * - Rule vocabulary: only recognized matching strategies
- * - No free-text fields — everything validated against registries
+ * - Open vocabulary — agents submit any domain/context/strategy/condition
+ * - No free-text data fields — just categorical keys + numeric outcomes
  * - No agent attribution on signals — aggregates are anonymous
+ * 
+ * OPEN SIGNAL FORMAT:
+ * Agents report: { domain, context, strategy, condition?, outcome, cost? }
+ * The coordinator aggregates into buckets. No validation against closed enums.
+ * The network learns what works from what agents actually report.
  * 
  * Run: npx tsx server/index.ts
  * Deploy: pm2 start server/index.ts --interpreter npx --interpreter-args tsx --name dpth-api
@@ -32,102 +36,18 @@ const startTime = Date.now();
 
 app.use('*', cors());
 
-// ── Source Registry ─────────────────────────────────
-// Only recognized sources can appear in signal schemas.
-// Adding a new source is a deliberate protocol decision.
+// ── Validation (safety only, not vocabulary) ────────
+// We validate format, not content. Agents can submit any terms.
 
-const SOURCE_REGISTRY = new Set([
-  // Payment / billing
-  'stripe', 'paypal', 'square', 'braintree', 'adyen',
-  // Code / dev
-  'github', 'gitlab', 'bitbucket', 'jira', 'linear',
-  // CRM / sales
-  'hubspot', 'salesforce', 'pipedrive', 'close',
-  // Support
-  'zendesk', 'intercom', 'freshdesk',
-  // Commerce
-  'shopify', 'woocommerce', 'bigcommerce',
-  // Accounting
-  'quickbooks', 'xero', 'freshbooks',
-  // Communication
-  'slack', 'discord', 'teams',
-  // Analytics
-  'google_analytics', 'mixpanel', 'amplitude', 'segment',
-  // Auth / identity
-  'auth0', 'okta', 'clerk',
-  // Email / marketing
-  'mailchimp', 'sendgrid', 'resend',
-  // Documents
-  'google_docs', 'notion', 'confluence',
-  // Cloud
-  'aws', 'gcp', 'azure',
-  // Generic (for less common sources)
-  'api', 'csv', 'database', 'webhook', 'manual',
-]);
+const MAX_FIELD_LENGTH = 128;
+const MAX_ATTEMPTS_PER_SIGNAL = 100000;
 
-// ── Rule Vocabulary ─────────────────────────────────
-// Only recognized matching rules can appear in signals.
-// Each rule has defined semantic meaning.
-
-const RULE_REGISTRY = new Set([
-  // Identity matching
-  'email_exact',           // Exact email match
-  'email_domain',          // Same email domain
-  'email_normalized',      // Normalized email (case, dots, plus-addressing)
-  'name_exact',            // Exact name match
-  'name_fuzzy',            // Fuzzy/similarity name match
-  'name_abbreviation',     // Abbreviation matching (e.g. "Acme Corp" → "ACME Corporation")
-  'phone_exact',           // Exact phone match
-  'phone_normalized',      // Normalized phone (country code, formatting)
-  'address_exact',         // Exact address match
-  'address_normalized',    // Normalized address (abbreviations, formatting)
-  'external_id',           // Shared external ID across sources
-  'url_match',             // URL/domain matching
-  'alias_match',           // Known alias/username matching
-
-  // Behavioral matching
-  'timing_correlation',    // Activity timing patterns
-  'transaction_pattern',   // Transaction pattern similarity
-]);
-
-// ── Modifier Vocabulary ─────────────────────────────
-// Conditions that affect match confidence.
-
-const MODIFIER_REGISTRY = new Set([
-  'generic_domain',        // gmail, yahoo, hotmail, etc.
-  'corporate_domain',      // Company-specific email domain
-  'exact',                 // Exact/precise match
-  'partial',               // Partial match
-  'case_insensitive',      // Match was case-insensitive
-  'nickname_variant',      // Common nickname (Bob/Robert, etc.)
-  'unicode_normalized',    // Unicode normalization applied
-  'high_population',       // Common name (John Smith, etc.)
-  'low_population',        // Uncommon/unique name
-  'single_source',         // Only one source in this schema had the field
-  'multi_field',           // Multiple fields contributed to this match
-  'none',                  // No modifier (default)
-]);
-
-// ── Validation ──────────────────────────────────────
-
-function validateSchema(schema: string): string | null {
-  const parts = schema.split('+');
-  if (parts.length !== 2) return 'Schema must be exactly two sources joined by "+"';
-  const [a, b] = parts;
-  if (!SOURCE_REGISTRY.has(a)) return `Unknown source: "${a}". See GET /registry for valid sources.`;
-  if (!SOURCE_REGISTRY.has(b)) return `Unknown source: "${b}". See GET /registry for valid sources.`;
-  if (a === b) return 'Schema must have two different sources';
-  return null;
-}
-
-function validateRule(rule: string): string | null {
-  if (!RULE_REGISTRY.has(rule)) return `Unknown rule: "${rule}". See GET /registry for valid rules.`;
-  return null;
-}
-
-function validateModifier(modifier: string | undefined): string | null {
-  if (!modifier || modifier === 'none') return null;
-  if (!MODIFIER_REGISTRY.has(modifier)) return `Unknown modifier: "${modifier}". See GET /registry for valid modifiers.`;
+function validateStringField(value: unknown, name: string): string | null {
+  if (typeof value !== 'string') return `${name} must be a string`;
+  if (value.length === 0) return `${name} cannot be empty`;
+  if (value.length > MAX_FIELD_LENGTH) return `${name} exceeds ${MAX_FIELD_LENGTH} chars`;
+  // Only allow printable ASCII + limited punctuation — no injection vectors
+  if (!/^[a-zA-Z0-9_.\-+:/ ]+$/.test(value)) return `${name} contains invalid characters (alphanumeric, _, ., -, +, :, / only)`;
   return null;
 }
 
@@ -176,22 +96,29 @@ interface CreditBalance {
  * No agent attribution, no individual data points.
  */
 interface SignalBucket {
-  /** Canonical key: "stripe+github:email_exact:generic_domain" */
+  /** Canonical key: "identity:stripe+github:email_match:generic_domain" */
   id: string;
-  schema: string;
-  rule: string;
-  modifier: string;
-  /** Total resolution attempts folded into this bucket */
+  /** Task domain: identity, tool, api, recovery, quality, or anything agents submit */
+  domain: string;
+  /** Context: what was the situation (e.g., source pair, task type) */
+  context: string;
+  /** Strategy: what approach was tried */
+  strategy: string;
+  /** Condition: modifier on the context (e.g., "generic_domain", "peak_hours") */
+  condition: string;
+  /** Total attempts folded into this bucket */
   attempts: number;
-  /** Running total of true positives */
-  truePositives: number;
-  /** Running total of false positives */
-  falsePositives: number;
-  /** Computed: truePositives / attempts */
-  precision: number;
-  /** Computed: falsePositives / attempts */
-  falseMergeRate: number;
-  /** Number of independent contributions (not stored per-agent, just count) */
+  /** Successes (true positives, correct outcomes) */
+  successes: number;
+  /** Failures (false positives, incorrect outcomes) */
+  failures: number;
+  /** Computed: successes / attempts */
+  successRate: number;
+  /** Computed: failures / attempts */
+  failureRate: number;
+  /** Total cost units reported (tokens, ms, API calls — agent-defined) */
+  totalCost: number;
+  /** Number of independent contributions */
   contributions: number;
   /** First signal received */
   firstSeen: Date;
@@ -205,10 +132,21 @@ async function ensureReady() {
   await adapter.get('_init', '_init');
 }
 
-function bucketKey(schema: string, rule: string, modifier?: string): string {
-  // Normalize schema to alphabetical order: "github+stripe" → "github+stripe"
-  const parts = schema.split('+').sort();
-  return `${parts.join('+')}:${rule}:${modifier || 'none'}`;
+function bucketKey(domain: string, context: string, strategy: string, condition: string): string {
+  // Normalize context: if it looks like "a+b", sort alphabetically
+  let normalizedContext = context;
+  if (context.includes('+')) {
+    const parts = context.split('+').sort();
+    normalizedContext = parts.join('+');
+  }
+  return `${domain}:${normalizedContext}:${strategy}:${condition}`;
+}
+
+function normalizeContext(context: string): string {
+  if (context.includes('+')) {
+    return context.split('+').sort().join('+');
+  }
+  return context;
 }
 
 // ── Routes: Status ──────────────────────────────────
@@ -223,10 +161,16 @@ app.get('/', async (c) => {
   const online = agents.filter(a => a.status === 'online').length;
   const uptimeH = Math.floor((Date.now() - startTime) / 3600000);
   
+  // Discover vocabulary organically from what's been submitted
+  const domains = [...new Set(buckets.map(b => b.domain))];
+  const contexts = [...new Set(buckets.map(b => b.context))];
+  const strategies = [...new Set(buckets.map(b => b.strategy))];
+  const conditions = [...new Set(buckets.map(b => b.condition))].filter(c => c !== 'none');
+  
   return c.json({
     network: {
       name: 'dpth.io',
-      version: '0.4.0',
+      version: '0.5.0',
       uptime: `${uptimeH}h`,
       coordinator: 'api.dpth.io',
     },
@@ -243,12 +187,15 @@ app.get('/', async (c) => {
     },
     intelligence: {
       buckets: buckets.length,
-      schemas: [...new Set(buckets.map(b => b.schema))].length,
+      domains: domains.length,
+      contexts: contexts.length,
+      strategies: strategies.length,
+      conditions: conditions.length,
       totalAttempts: buckets.reduce((s, b) => s + b.attempts, 0),
       totalContributions: buckets.reduce((s, b) => s + b.contributions, 0),
-      avgPrecision: buckets.length > 0
+      avgSuccessRate: buckets.length > 0
         ? Math.round(
-            buckets.reduce((s, b) => s + b.precision * b.attempts, 0) /
+            buckets.reduce((s, b) => s + b.successRate * b.attempts, 0) /
             buckets.reduce((s, b) => s + b.attempts, 0) * 1000
           ) / 1000
         : null,
@@ -257,23 +204,83 @@ app.get('/', async (c) => {
       model: 'aggregate-only',
       individualSignalsStored: false,
       agentAttribution: false,
-      sourceRegistry: SOURCE_REGISTRY.size,
-      ruleVocabulary: RULE_REGISTRY.size,
-      modifierVocabulary: MODIFIER_REGISTRY.size,
+      vocabularyMode: 'open',
     },
   });
 });
 
-// ── Routes: Registry ────────────────────────────────
-// Public: what sources, rules, and modifiers are recognized
+// ── Routes: Vocabulary Discovery ────────────────────
+// Instead of a static registry, discover what agents have actually submitted
 
-app.get('/registry', (c) => {
+app.get('/vocabulary', async (c) => {
+  await ensureReady();
+  const buckets = await adapter.query({ collection: 'signal_buckets' }) as SignalBucket[];
+  const domainFilter = c.req.query('domain');
+  
+  const filtered = domainFilter ? buckets.filter(b => b.domain === domainFilter) : buckets;
+  
+  // Build vocabulary from actual submissions
+  const domainStats = new Map<string, { buckets: number; attempts: number; contributions: number }>();
+  const contextStats = new Map<string, { buckets: number; attempts: number }>();
+  const strategyStats = new Map<string, { buckets: number; attempts: number; avgSuccess: number }>();
+  const conditionStats = new Map<string, { buckets: number; attempts: number }>();
+  
+  for (const b of filtered) {
+    // Domains
+    const ds = domainStats.get(b.domain) || { buckets: 0, attempts: 0, contributions: 0 };
+    ds.buckets++; ds.attempts += b.attempts; ds.contributions += b.contributions;
+    domainStats.set(b.domain, ds);
+    
+    // Contexts
+    const cs = contextStats.get(b.context) || { buckets: 0, attempts: 0 };
+    cs.buckets++; cs.attempts += b.attempts;
+    contextStats.set(b.context, cs);
+    
+    // Strategies
+    const ss = strategyStats.get(b.strategy) || { buckets: 0, attempts: 0, avgSuccess: 0 };
+    ss.buckets++; ss.attempts += b.attempts;
+    ss.avgSuccess = (ss.avgSuccess * (ss.buckets - 1) + b.successRate) / ss.buckets;
+    strategyStats.set(b.strategy, ss);
+    
+    // Conditions
+    if (b.condition !== 'none') {
+      const cond = conditionStats.get(b.condition) || { buckets: 0, attempts: 0 };
+      cond.buckets++; cond.attempts += b.attempts;
+      conditionStats.set(b.condition, cond);
+    }
+  }
+  
   return c.json({
-    sources: [...SOURCE_REGISTRY].sort(),
-    rules: [...RULE_REGISTRY].sort(),
-    modifiers: [...MODIFIER_REGISTRY].sort(),
-    schemaFormat: '{source}+{source} (alphabetically sorted)',
-    note: 'Signals with unrecognized values are rejected. To propose new entries, see PROTOCOL.md.',
+    vocabularyMode: 'open — discovered from agent submissions',
+    filter: domainFilter || 'all',
+    domains: Object.fromEntries([...domainStats].sort((a, b) => b[1].attempts - a[1].attempts)),
+    contexts: Object.fromEntries([...contextStats].sort((a, b) => b[1].attempts - a[1].attempts).slice(0, 100)),
+    strategies: Object.fromEntries([...strategyStats].sort((a, b) => b[1].attempts - a[1].attempts).slice(0, 100)),
+    conditions: Object.fromEntries([...conditionStats].sort((a, b) => b[1].attempts - a[1].attempts).slice(0, 100)),
+  });
+});
+
+// Keep /registry as alias for backward compat
+app.get('/registry', async (c) => {
+  // Redirect to vocabulary
+  const buckets = await adapter.query({ collection: 'signal_buckets' }) as SignalBucket[];
+  return c.json({
+    note: 'Vocabulary is now OPEN. Agents submit any terms. This endpoint shows what has been submitted.',
+    vocabularyMode: 'open',
+    domains: [...new Set(buckets.map(b => b.domain))].sort(),
+    contexts: [...new Set(buckets.map(b => b.context))].sort(),
+    strategies: [...new Set(buckets.map(b => b.strategy))].sort(),
+    conditions: [...new Set(buckets.map(b => b.condition))].filter(c => c !== 'none').sort(),
+    signalFormat: {
+      domain: 'string — what kind of task (identity, tool, api, recovery, etc.)',
+      context: 'string — the situation (e.g., "stripe+github", "summarize_url")',
+      strategy: 'string — what approach was tried (e.g., "email_match", "web_fetch")',
+      condition: 'string (optional) — modifier (e.g., "generic_domain", "peak_hours")',
+      successes: 'number — how many times this worked',
+      failures: 'number — how many times this failed',
+      totalAttempts: 'number — total tries',
+      cost: 'number (optional) — tokens/ms/calls spent',
+    },
   });
 });
 
@@ -296,7 +303,6 @@ app.post('/agents', async (c) => {
   
   await adapter.put('agents', agent.id, agent);
   
-  // Initialize credit balance
   const balance: CreditBalance = {
     agentId: agent.id,
     balance: 10,
@@ -388,7 +394,6 @@ app.post('/tasks/:id/complete', async (c) => {
   task.result = body.result;
   await adapter.put('tasks', id, task);
   
-  // Reward the completing agent
   if (task.claimedBy) {
     const credits = await adapter.get('credits', task.claimedBy) as CreditBalance | undefined;
     if (credits) {
@@ -424,75 +429,83 @@ app.get('/credits', async (c) => {
   });
 });
 
-// ── Routes: Resolution Signals (The Waze Layer) ─────
+// ── Routes: Signals (Open Format) ───────────────────
+//
+// OPEN VOCABULARY: Agents submit any domain/context/strategy/condition.
+// The coordinator doesn't judge what's valid — it aggregates everything.
+// Statistical convergence determines what's useful.
 //
 // SECURITY: Individual signals are NEVER stored.
-// Incoming signals are validated, folded into aggregate
-// buckets, and discarded. The bucket stores only:
-//   { attempts, truePositives, falsePositives, contributions }
-// No agent IDs, no individual data points, no PII.
+// Incoming signals are validated for FORMAT (not content),
+// folded into aggregate buckets, and discarded.
 
 app.post('/signals', async (c) => {
   await ensureReady();
   const body = await c.req.json();
   
-  // ── Validate all fields against registries ──
-  if (!body.schema || !body.rule) {
-    return c.json({ error: 'schema and rule are required' }, 400);
+  // ── Accept both old format (schema/rule/modifier) and new (domain/context/strategy/condition) ──
+  const domain = body.domain || 'identity'; // backward compat: default to identity
+  const context = body.context || body.schema;
+  const strategy = body.strategy || body.rule;
+  const condition = body.condition || body.modifier || 'none';
+  
+  // ── Validate format (not content) ──
+  if (!context || !strategy) {
+    return c.json({ 
+      error: 'context and strategy are required',
+      format: '{ domain, context, strategy, condition?, successes, failures, totalAttempts, cost? }',
+    }, 400);
   }
   
-  const schemaErr = validateSchema(body.schema);
-  if (schemaErr) return c.json({ error: schemaErr }, 400);
+  for (const [field, value] of [['domain', domain], ['context', context], ['strategy', strategy], ['condition', condition]] as const) {
+    const err = validateStringField(value, field);
+    if (err) return c.json({ error: err }, 400);
+  }
   
-  const ruleErr = validateRule(body.rule);
-  if (ruleErr) return c.json({ error: ruleErr }, 400);
-  
-  const modErr = validateModifier(body.modifier);
-  if (modErr) return c.json({ error: modErr }, 400);
-  
-  // Validate numeric bounds
-  const truePos = Math.max(0, Math.floor(body.truePositives || 0));
-  const falsePos = Math.max(0, Math.floor(body.falsePositives || 0));
-  const attempts = Math.max(0, Math.floor(body.totalAttempts || 0));
+  // Accept both old (truePositives/falsePositives) and new (successes/failures) field names
+  const successes = Math.max(0, Math.floor(body.successes ?? body.truePositives ?? 0));
+  const failures = Math.max(0, Math.floor(body.failures ?? body.falsePositives ?? 0));
+  const attempts = Math.max(0, Math.floor(body.totalAttempts || (successes + failures) || 0));
+  const cost = Math.max(0, body.cost || 0);
   
   if (attempts === 0) {
-    return c.json({ error: 'totalAttempts must be > 0' }, 400);
+    return c.json({ error: 'totalAttempts must be > 0 (or provide successes + failures)' }, 400);
   }
-  if (truePos + falsePos > attempts) {
-    return c.json({ error: 'truePositives + falsePositives cannot exceed totalAttempts' }, 400);
+  if (successes + failures > attempts) {
+    return c.json({ error: 'successes + failures cannot exceed totalAttempts' }, 400);
   }
-  if (attempts > 100000) {
-    return c.json({ error: 'totalAttempts capped at 100,000 per signal submission' }, 400);
+  if (attempts > MAX_ATTEMPTS_PER_SIGNAL) {
+    return c.json({ error: `totalAttempts capped at ${MAX_ATTEMPTS_PER_SIGNAL} per submission` }, 400);
   }
   
-  // ── Fold into aggregate bucket (no individual storage) ──
-  const key = bucketKey(body.schema, body.rule, body.modifier);
-  const normalizedSchema = body.schema.split('+').sort().join('+');
-  const modifier = body.modifier || 'none';
+  // ── Fold into aggregate bucket ──
+  const normalizedContext = normalizeContext(context);
+  const key = bucketKey(domain, normalizedContext, strategy, condition);
   
   let bucket = await adapter.get('signal_buckets', key) as SignalBucket | undefined;
   
   if (bucket) {
-    // Fold signal into existing bucket
     bucket.attempts += attempts;
-    bucket.truePositives += truePos;
-    bucket.falsePositives += falsePos;
-    bucket.precision = bucket.attempts > 0 ? bucket.truePositives / bucket.attempts : 0;
-    bucket.falseMergeRate = bucket.attempts > 0 ? bucket.falsePositives / bucket.attempts : 0;
+    bucket.successes += successes;
+    bucket.failures += failures;
+    bucket.successRate = bucket.attempts > 0 ? bucket.successes / bucket.attempts : 0;
+    bucket.failureRate = bucket.attempts > 0 ? bucket.failures / bucket.attempts : 0;
+    bucket.totalCost += cost;
     bucket.contributions += 1;
     bucket.lastUpdated = new Date();
   } else {
-    // Create new bucket
     bucket = {
       id: key,
-      schema: normalizedSchema,
-      rule: body.rule,
-      modifier,
+      domain,
+      context: normalizedContext,
+      strategy,
+      condition,
       attempts,
-      truePositives: truePos,
-      falsePositives: falsePos,
-      precision: attempts > 0 ? truePos / attempts : 0,
-      falseMergeRate: attempts > 0 ? falsePos / attempts : 0,
+      successes,
+      failures,
+      successRate: attempts > 0 ? successes / attempts : 0,
+      failureRate: attempts > 0 ? failures / attempts : 0,
+      totalCost: cost,
       contributions: 1,
       firstSeen: new Date(),
       lastUpdated: new Date(),
@@ -501,7 +514,7 @@ app.post('/signals', async (c) => {
   
   await adapter.put('signal_buckets', key, bucket);
   
-  // Reward the contributing agent (credits only, no signal attribution)
+  // Reward contributing agent
   if (body.agentId) {
     const credits = await adapter.get('credits', body.agentId) as CreditBalance | undefined;
     if (credits) {
@@ -512,15 +525,16 @@ app.post('/signals', async (c) => {
     }
   }
   
-  // Return the aggregate (not the individual signal — it doesn't exist)
   return c.json({
     accepted: true,
     bucket: {
-      schema: bucket.schema,
-      rule: bucket.rule,
-      modifier: bucket.modifier,
-      precision: Math.round(bucket.precision * 1000) / 1000,
-      falseMergeRate: Math.round(bucket.falseMergeRate * 1000) / 1000,
+      domain: bucket.domain,
+      context: bucket.context,
+      strategy: bucket.strategy,
+      condition: bucket.condition,
+      successRate: Math.round(bucket.successRate * 1000) / 1000,
+      failureRate: Math.round(bucket.failureRate * 1000) / 1000,
+      avgCost: bucket.attempts > 0 ? Math.round(bucket.totalCost / bucket.attempts * 100) / 100 : 0,
       attempts: bucket.attempts,
       contributions: bucket.contributions,
     },
@@ -529,26 +543,28 @@ app.post('/signals', async (c) => {
 
 app.get('/signals', async (c) => {
   await ensureReady();
-  const schema = c.req.query('schema');
-  const rule = c.req.query('rule');
+  const domain = c.req.query('domain');
+  const context = c.req.query('context') || c.req.query('schema'); // backward compat
+  const strategy = c.req.query('strategy') || c.req.query('rule');
   
   let buckets = await adapter.query({ collection: 'signal_buckets' }) as SignalBucket[];
   
-  if (schema) {
-    const normalized = schema.split('+').sort().join('+');
-    buckets = buckets.filter(b => b.schema === normalized);
+  if (domain) buckets = buckets.filter(b => b.domain === domain);
+  if (context) {
+    const normalized = normalizeContext(context);
+    buckets = buckets.filter(b => b.context === normalized);
   }
-  if (rule) {
-    buckets = buckets.filter(b => b.rule === rule);
-  }
+  if (strategy) buckets = buckets.filter(b => b.strategy === strategy);
   
   return c.json({
     buckets: buckets.map(b => ({
-      schema: b.schema,
-      rule: b.rule,
-      modifier: b.modifier,
-      precision: Math.round(b.precision * 1000) / 1000,
-      falseMergeRate: Math.round(b.falseMergeRate * 1000) / 1000,
+      domain: b.domain,
+      context: b.context,
+      strategy: b.strategy,
+      condition: b.condition,
+      successRate: Math.round(b.successRate * 1000) / 1000,
+      failureRate: Math.round(b.failureRate * 1000) / 1000,
+      avgCost: b.attempts > 0 ? Math.round(b.totalCost / b.attempts * 100) / 100 : 0,
       attempts: b.attempts,
       contributions: b.contributions,
       lastUpdated: b.lastUpdated,
@@ -557,59 +573,67 @@ app.get('/signals', async (c) => {
   });
 });
 
-// Calibration endpoint — agents ask "how well does this rule work?"
-app.get('/signals/calibrate', async (c) => {
+// Calibration endpoint — agents ask "what does the network know about this?"
+app.get('/calibrate', async (c) => {
   await ensureReady();
-  const schema = c.req.query('schema');
-  const rule = c.req.query('rule');
-  const modifier = c.req.query('modifier');
+  const domain = c.req.query('domain');
+  const context = c.req.query('context') || c.req.query('schema');
+  const strategy = c.req.query('strategy') || c.req.query('rule');
+  const condition = c.req.query('condition') || c.req.query('modifier');
   
-  if (!schema || !rule) {
-    return c.json({ error: 'schema and rule query params required' }, 400);
+  if (!context && !strategy && !domain) {
+    return c.json({ 
+      error: 'At least one of domain, context, or strategy is required',
+      usage: 'GET /calibrate?domain=identity&context=stripe+github&strategy=email_match',
+    }, 400);
   }
   
-  const key = bucketKey(schema, rule, modifier);
-  const bucket = await adapter.get('signal_buckets', key) as SignalBucket | undefined;
+  let buckets = await adapter.query({ collection: 'signal_buckets' }) as SignalBucket[];
   
-  if (!bucket) {
-    // No data for this combination — try without modifier
-    const baseKey = bucketKey(schema, rule, 'none');
-    const baseBucket = await adapter.get('signal_buckets', baseKey) as SignalBucket | undefined;
-    
-    if (!baseBucket) {
-      return c.json({
-        calibration: null,
-        message: 'No signals for this combination. Your agent is the first — contribute!',
-      });
-    }
-    
+  if (domain) buckets = buckets.filter(b => b.domain === domain);
+  if (context) {
+    const normalized = normalizeContext(context);
+    buckets = buckets.filter(b => b.context === normalized);
+  }
+  if (strategy) buckets = buckets.filter(b => b.strategy === strategy);
+  if (condition) buckets = buckets.filter(b => b.condition === condition);
+  
+  if (buckets.length === 0) {
     return c.json({
-      calibration: {
-        schema: baseBucket.schema,
-        rule: baseBucket.rule,
-        modifier: 'none',
-        precision: Math.round(baseBucket.precision * 1000) / 1000,
-        falseMergeRate: Math.round(baseBucket.falseMergeRate * 1000) / 1000,
-        confidence: Math.min(baseBucket.attempts / 1000, 1),
-        attempts: baseBucket.attempts,
-        contributions: baseBucket.contributions,
-      },
-      note: `No data for modifier "${modifier || 'none'}", returning base rule stats.`,
+      calibration: null,
+      message: 'No signals match this query. Your agent is exploring new territory — contribute!',
     });
   }
   
+  // Return all matching buckets, sorted by attempts (most data = most confident)
+  const results = buckets
+    .sort((a, b) => b.attempts - a.attempts)
+    .map(b => ({
+      domain: b.domain,
+      context: b.context,
+      strategy: b.strategy,
+      condition: b.condition,
+      successRate: Math.round(b.successRate * 1000) / 1000,
+      failureRate: Math.round(b.failureRate * 1000) / 1000,
+      avgCost: b.attempts > 0 ? Math.round(b.totalCost / b.attempts * 100) / 100 : 0,
+      confidence: Math.min(b.attempts / 1000, 1),
+      attempts: b.attempts,
+      contributions: b.contributions,
+    }));
+  
   return c.json({
-    calibration: {
-      schema: bucket.schema,
-      rule: bucket.rule,
-      modifier: bucket.modifier,
-      precision: Math.round(bucket.precision * 1000) / 1000,
-      falseMergeRate: Math.round(bucket.falseMergeRate * 1000) / 1000,
-      confidence: Math.min(bucket.attempts / 1000, 1),
-      attempts: bucket.attempts,
-      contributions: bucket.contributions,
-    },
+    calibration: results,
+    count: results.length,
+    totalAttempts: results.reduce((s, r) => s + r.attempts, 0),
   });
+});
+
+// Keep old endpoint as alias
+app.get('/signals/calibrate', async (c) => {
+  // Forward to new /calibrate
+  const url = new URL(c.req.url);
+  url.pathname = '/calibrate';
+  return c.redirect(url.toString());
 });
 
 // ── Start ───────────────────────────────────────────
@@ -619,6 +643,6 @@ console.log(`dpth.io coordinator starting on port ${PORT}...`);
 serve({ fetch: app.fetch, port: PORT }, () => {
   console.log(`✓ dpth.io network coordinator live at http://localhost:${PORT}`);
   console.log(`  Database: ${DB_PATH}`);
-  console.log(`  Security: aggregate-only signals, ${SOURCE_REGISTRY.size} sources, ${RULE_REGISTRY.size} rules, ${MODIFIER_REGISTRY.size} modifiers`);
-  console.log(`  Endpoints: /, /registry, /agents, /tasks, /credits, /signals, /signals/calibrate`);
+  console.log(`  Security: aggregate-only signals, open vocabulary`);
+  console.log(`  Endpoints: /, /vocabulary, /agents, /tasks, /credits, /signals, /calibrate`);
 });

@@ -400,17 +400,17 @@ async function testNetworkOptIn() {
   
   // Verify signal was received by checking calibration
   // Schema is sorted alphabetically: github+stripe
-  const res = await fetch('https://api.dpth.io/signals/calibrate?schema=github%2Bstripe&rule=email_exact');
+  const res = await fetch('https://api.dpth.io/calibrate?domain=identity&context=github%2Bstripe&strategy=email_exact');
   const data = await res.json();
-  if (data.calibration) {
+  if (data.calibration && data.calibration.length > 0) {
     assert(true, 'signal reached the coordinator');
-    assert(data.calibration.precision > 0, `calibration precision: ${data.calibration.precision}`);
+    assert(data.calibration[0].successRate > 0, `calibration precision: ${data.calibration[0].successRate}`);
   } else {
     // Signal may not have arrived yet (network latency) — check signals list
-    const listRes = await fetch('https://api.dpth.io/signals');
+    const listRes = await fetch('https://api.dpth.io/signals?domain=identity');
     const listData = await listRes.json();
-    const hasOurSchema = listData.signals.some((s: any) => s.schema === 'github+stripe');
-    assert(hasOurSchema, 'signal found in network signals list');
+    const hasOurContext = listData.buckets.some((b: any) => b.context === 'github+stripe');
+    assert(hasOurContext, 'signal found in network signals list');
   }
 }
 
