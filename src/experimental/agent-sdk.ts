@@ -7,7 +7,7 @@
  * Usage:
  *   const agent = new DpthAgent({
  *     name: 'my-agent',
- *     apiUrl: 'https://fathom.gib.lol/api/dpth',
+ *     apiUrl: 'https://api.dpth.io',
  *     capabilities: { storageCapacityMb: 1000, cpuCores: 4, ... }
  *   });
  *   
@@ -27,9 +27,13 @@ export interface AgentCapabilities {
   taskTypes: ('embed' | 'correlate' | 'extract' | 'analyze' | 'inference')[];
 }
 
+/** Default coordinator URL */
+export const DPTH_COORDINATOR_URL = 'https://api.dpth.io';
+
 export interface AgentConfig {
   name: string;
-  apiUrl: string;
+  /** Coordinator URL (default: https://api.dpth.io) */
+  apiUrl?: string;
   capabilities: AgentCapabilities;
   /** Private key for signing (generated if not provided) */
   privateKey?: string;
@@ -86,6 +90,7 @@ export class DpthAgent {
     
     this.config = {
       ...config,
+      apiUrl: config.apiUrl || DPTH_COORDINATOR_URL,
       privateKey: this.privateKey,
       pollIntervalMs: config.pollIntervalMs || 5000,
       handlers: config.handlers || {},
@@ -218,6 +223,75 @@ export class DpthAgent {
     }
   }
   
+  // ── Resolution Signals (The Waze Layer) ──────────
+
+  /**
+   * Submit a resolution signal — share how well a matching rule works.
+   * This is the core of dpth's collective intelligence: agents share
+   * anonymized statistics about entity matching, making everyone's
+   * resolution smarter.
+   * 
+   * Example:
+   *   await agent.submitSignal({
+   *     schema: 'stripe+github',
+   *     rule: 'email_exact_match',
+   *     truePositives: 847,
+   *     falsePositives: 12,
+   *     totalAttempts: 859,
+   *   });
+   */
+  async submitSignal(signal: {
+    schema: string;
+    rule: string;
+    modifier?: string;
+    truePositives: number;
+    falsePositives: number;
+    totalAttempts: number;
+  }): Promise<{ id: string; precision: number }> {
+    const response = await this.fetch('/signals', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...signal,
+        agentId: this.agentId,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to submit signal');
+    }
+    
+    const result = await response.json();
+    return { id: result.signal.id, precision: result.signal.precision };
+  }
+  
+  /**
+   * Get calibration data — ask the network how well a matching rule works.
+   * Returns aggregate precision from all contributing agents.
+   * 
+   * Example:
+   *   const cal = await agent.getCalibration('stripe+github', 'email_exact_match');
+   *   // { precision: 0.986, confidence: 0.859, contributorCount: 47 }
+   */
+  async getCalibration(schema: string, rule: string): Promise<{
+    precision: number;
+    confidence: number;
+    totalAttempts: number;
+    contributorCount: number;
+  } | null> {
+    const response = await this.fetch(
+      `/signals/calibrate?schema=${encodeURIComponent(schema)}&rule=${encodeURIComponent(rule)}`
+    );
+    
+    if (!response.ok) {
+      throw new Error('Failed to get calibration');
+    }
+    
+    const result = await response.json();
+    return result.calibration;
+  }
+
+  // ── Storage ────────────────────────────────────────
+
   /**
    * Store a chunk, returns CID
    */
