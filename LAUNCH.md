@@ -81,7 +81,7 @@ Entity resolution:
 ```
 const db = dpth();
 
-db.entity.resolve({
+await db.entity.resolve({
   type: 'person',
   name: 'John Smith',
   source: 'stripe',
