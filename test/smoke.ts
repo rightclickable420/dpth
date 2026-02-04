@@ -8,20 +8,20 @@
 import { resolveOrCreate, getEntity, getEntitiesByType, clearEntities } from '../src/entity';
 import { registerMetric, addMetricPoints, getMetric, clearMetrics } from '../src/correlation';
 import { takeSnapshot, getSnapshots, diffSnapshots, clearSnapshots } from '../src/temporal';
-import { getConfiguredProviders, findFallbackProvider, getFallbackStatus } from '../src/fallback';
-import { DpthAgent } from '../src/agent-sdk';
+import { getConfiguredProviders, findFallbackProvider, getFallbackStatus } from '../src/experimental/fallback';
+import { DpthAgent } from '../src/experimental/agent-sdk';
 import {
   earnCredits, spendCredits, transferCredits, penalizeAgent,
   getBalance, getSupply, getLeaderboard, checkRateLimit,
   getPricingSignal, rewardStorage, rewardGpuInference, chargeInference,
   createMigrationSnapshot, clearEconomics, InsufficientCreditsError,
-} from '../src/economics';
+} from '../src/experimental/economics';
 import {
   registerBaseModel, getLatestVersion, getVersionHistory,
   createTrainingRound, claimTrainingRound, submitWeightDelta,
   aggregateRound, getAvailableRounds, getTrainingStats,
   listModelFamilies, clearFederation,
-} from '../src/federation';
+} from '../src/experimental/federation';
 
 let passed = 0;
 let failed = 0;

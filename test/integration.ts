@@ -12,7 +12,7 @@
  * Run: npx tsx test/integration.ts
  */
 
-import { DpthAgent } from '../src/agent-sdk';
+import { DpthAgent } from '../src/experimental/agent-sdk';
 import {
   resolveOrCreate, getEntity, getEntitiesByType, clearEntities,
 } from '../src/entity';
@@ -28,16 +28,16 @@ import {
   getBalance, getSupply, getLeaderboard, checkRateLimit,
   getPricingSignal, transferCredits, createMigrationSnapshot,
   clearEconomics, InsufficientCreditsError,
-} from '../src/economics';
+} from '../src/experimental/economics';
 import {
   registerBaseModel, createTrainingRound, claimTrainingRound,
   submitWeightDelta, aggregateRound, getLatestVersion,
   getTrainingStats, getAgentTrainingHistory, getAvailableRounds,
   clearFederation,
-} from '../src/federation';
+} from '../src/experimental/federation';
 import {
   getFallbackStatus, findFallbackProvider,
-} from '../src/fallback';
+} from '../src/experimental/fallback';
 
 // ─── Test Harness ────────────────────────────────────
 

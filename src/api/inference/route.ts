@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { fallbackInference, findFallbackProvider, getFallbackStatus } from '../../fallback.js';
+import { fallbackInference, findFallbackProvider, getFallbackStatus } from '../../experimental/fallback.js';
 
 // ─── Types ───────────────────────────────────────────
 
