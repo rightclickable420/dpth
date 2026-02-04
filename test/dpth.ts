@@ -7,6 +7,7 @@
 
 import { dpth, Dpth } from '../src/dpth.js';
 import { MemoryVectorAdapter } from '../src/adapter-vector.js';
+import { ValidationError, AdapterCapabilityError } from '../src/errors.js';
 
 let passed = 0;
 let failed = 0;
@@ -89,6 +90,120 @@ async function testEntityAPI() {
   assert(mergeResult?.sources.length === 2, 'merge combines sources');
   const deletedRobert = await db.entity.get(robert.id);
   assert(deletedRobert === undefined, 'merged entity is deleted');
+  
+  await db.close();
+}
+
+// ─── Object-Style Resolve Tests ──────────────────────
+
+async function testObjectResolve() {
+  console.log('\n🆕 Object-Style Resolve API');
+  
+  const db = dpth();
+  
+  // Create entity with object form
+  const { entity: alice, isNew } = await db.entity.resolve({
+    type: 'person',
+    name: 'Alice Johnson',
+    source: 'stripe',
+    externalId: 'cus_alice',
+    email: 'alice@example.com',
+    attributes: { plan: 'pro' },
+  });
+  assert(isNew === true, 'object resolve creates new entity');
+  assert(alice.name === 'Alice Johnson', 'object resolve sets name');
+  assert(alice.attributes['email']?.current === 'alice@example.com', 'object resolve sets email');
+  assert(alice.attributes['plan']?.current === 'pro', 'object resolve sets attributes');
+  assert(alice.sources[0].sourceId === 'stripe', 'object resolve sets source');
+  
+  // Merge via object form (same email)
+  const { entity: merged, isNew: isNew2 } = await db.entity.resolve({
+    type: 'person',
+    name: 'A. Johnson',
+    source: 'github',
+    externalId: 'ajohnson',
+    email: 'alice@example.com',
+  });
+  assert(isNew2 === false, 'object resolve merges on email match');
+  assert(merged.id === alice.id, 'object resolve merges into same entity');
+  assert(merged.sources.length === 2, 'object resolve adds source on merge');
+  
+  // Same source via object form
+  const { isNew: isNew3 } = await db.entity.resolve({
+    type: 'person',
+    name: 'Alice Johnson',
+    source: 'stripe',
+    externalId: 'cus_alice',
+  });
+  assert(isNew3 === false, 'object resolve recognizes existing source');
+  
+  // Custom entity type via object form
+  const { entity: ticket } = await db.entity.resolve({
+    type: 'ticket' as any,
+    name: 'Bug #1234',
+    source: 'jira',
+    externalId: 'PROJ-1234',
+    attributes: { priority: 'high' },
+  });
+  assert(ticket.type === 'ticket', 'object resolve supports custom entity types');
+  
+  await db.close();
+}
+
+// ─── Validation Tests ────────────────────────────────
+
+async function testValidation() {
+  console.log('\n🛡️  Validation & Errors');
+  
+  const db = dpth();
+  
+  // Missing type
+  try {
+    await db.entity.resolve({ type: '', name: 'Test', source: 'x', externalId: 'y' });
+    assert(false, 'empty type should throw');
+  } catch (e) {
+    assert(e instanceof ValidationError, 'empty type throws ValidationError');
+    assert((e as ValidationError).code === 'VALIDATION_ERROR', 'error has correct code');
+  }
+  
+  // Missing name
+  try {
+    await db.entity.resolve({ type: 'person', name: '', source: 'x', externalId: 'y' });
+    assert(false, 'empty name should throw');
+  } catch (e) {
+    assert(e instanceof ValidationError, 'empty name throws ValidationError');
+  }
+  
+  // Missing source
+  try {
+    await db.entity.resolve({ type: 'person', name: 'Test', source: '', externalId: 'y' });
+    assert(false, 'empty source should throw');
+  } catch (e) {
+    assert(e instanceof ValidationError, 'empty source throws ValidationError');
+  }
+  
+  // Missing externalId
+  try {
+    await db.entity.resolve({ type: 'person', name: 'Test', source: 'x', externalId: '' });
+    assert(false, 'empty externalId should throw');
+  } catch (e) {
+    assert(e instanceof ValidationError, 'empty externalId throws ValidationError');
+  }
+  
+  // Vector ops on non-vector adapter
+  try {
+    await db.vector.store('test', 'k', [1, 2, 3]);
+    assert(false, 'vector.store should throw without VectorAdapter');
+  } catch (e) {
+    assert(e instanceof AdapterCapabilityError, 'vector.store throws AdapterCapabilityError');
+  }
+  
+  try {
+    await db.vector.search('test', [1, 2, 3]);
+    assert(false, 'vector.search should throw without VectorAdapter');
+  } catch (e) {
+    assert(e instanceof AdapterCapabilityError, 'vector.search throws AdapterCapabilityError');
+  }
   
   await db.close();
 }
@@ -239,6 +354,8 @@ async function main() {
   console.log('━━━ dpth.io Unified API Tests ━━━');
   
   await testEntityAPI();
+  await testObjectResolve();
+  await testValidation();
   await testTemporalAPI();
   await testCorrelationAPI();
   await testVectorAPI();

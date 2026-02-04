@@ -29,6 +29,7 @@
 import crypto from 'crypto';
 import type { StorageAdapter, VectorAdapter, VectorResult } from './storage.js';
 import { MemoryAdapter } from './storage.js';
+import { ValidationError, EntityNotFoundError, AdapterCapabilityError } from './errors.js';
 import type {
   Entity,
   EntityId,
@@ -46,6 +47,26 @@ export interface DpthOptions {
   adapter?: StorageAdapter;
   /** Path to SQLite database (convenience — creates SQLiteAdapter) */
   path?: string;
+}
+
+/** Object-style options for entity.resolve() */
+export interface ResolveOptions {
+  /** Entity type (e.g. 'person', 'company', or any custom string) */
+  type: EntityType;
+  /** Display name */
+  name: string;
+  /** Source system identifier (e.g. 'stripe', 'github') */
+  source: SourceId;
+  /** External ID in the source system (e.g. 'cus_123') */
+  externalId: string;
+  /** Email for matching (strong signal) */
+  email?: string;
+  /** Alternative names / aliases */
+  aliases?: string[];
+  /** Additional attributes to store */
+  attributes?: Record<string, unknown>;
+  /** Minimum confidence for auto-merge (default: 0.7) */
+  minConfidence?: number;
 }
 
 export interface ResolveResult {
@@ -154,12 +175,22 @@ export class Dpth {
 class EntityAPI {
   constructor(private adapter: StorageAdapter) {}
   
-  /** Resolve an entity — find existing match or create new */
+  /**
+   * Resolve an entity — find existing match or create new.
+   * 
+   * Preferred (object form):
+   *   db.entity.resolve({ type: 'person', name: 'John', source: 'stripe', externalId: 'cus_123' })
+   * 
+   * Legacy (positional form — deprecated, will be removed in v1.0):
+   *   db.entity.resolve('person', 'John', 'stripe', 'cus_123', { email: '...' })
+   */
+  async resolve(opts: ResolveOptions): Promise<ResolveResult>;
+  async resolve(type: EntityType, name: string, sourceId: SourceId, externalId: string, options?: { email?: string; aliases?: string[]; attributes?: Record<string, unknown>; minConfidence?: number }): Promise<ResolveResult>;
   async resolve(
-    type: EntityType,
-    name: string,
-    sourceId: SourceId,
-    externalId: string,
+    typeOrOpts: EntityType | ResolveOptions,
+    name?: string,
+    sourceId?: SourceId,
+    externalId?: string,
     options?: {
       email?: string;
       aliases?: string[];
@@ -167,7 +198,43 @@ class EntityAPI {
       minConfidence?: number;
     }
   ): Promise<ResolveResult> {
-    const sKey = `${sourceId}:${externalId}`;
+    // Normalize to object form
+    let type: EntityType;
+    let resolvedName: string;
+    let resolvedSourceId: SourceId;
+    let resolvedExternalId: string;
+    let email: string | undefined;
+    let aliases: string[] | undefined;
+    let attributes: Record<string, unknown> | undefined;
+    let minConfidence: number;
+    
+    if (typeof typeOrOpts === 'object') {
+      // Object form (preferred)
+      if (!typeOrOpts.type) throw new ValidationError('resolve() requires a non-empty "type" (e.g. "person", "company")');
+      if (!typeOrOpts.name) throw new ValidationError('resolve() requires a non-empty "name"');
+      if (!typeOrOpts.source) throw new ValidationError('resolve() requires a non-empty "source" (e.g. "stripe", "github")');
+      if (!typeOrOpts.externalId) throw new ValidationError('resolve() requires a non-empty "externalId"');
+      type = typeOrOpts.type;
+      resolvedName = typeOrOpts.name;
+      resolvedSourceId = typeOrOpts.source;
+      resolvedExternalId = typeOrOpts.externalId;
+      email = typeOrOpts.email;
+      aliases = typeOrOpts.aliases;
+      attributes = typeOrOpts.attributes;
+      minConfidence = typeOrOpts.minConfidence ?? 0.7;
+    } else {
+      // Legacy positional form
+      type = typeOrOpts;
+      resolvedName = name!;
+      resolvedSourceId = sourceId!;
+      resolvedExternalId = externalId!;
+      email = options?.email;
+      aliases = options?.aliases;
+      attributes = options?.attributes;
+      minConfidence = options?.minConfidence ?? 0.7;
+    }
+    
+    const sKey = `${resolvedSourceId}:${resolvedExternalId}`;
     
     // Check source index first (exact source match)
     const existingId = await this.adapter.get('source_index', sKey) as string | undefined;
@@ -175,7 +242,7 @@ class EntityAPI {
       const entity = await this.adapter.get('entities', existingId) as Entity | undefined;
       if (entity) {
         // Update last seen
-        const ref = entity.sources.find(s => s.sourceId === sourceId && s.externalId === externalId);
+        const ref = entity.sources.find(s => s.sourceId === resolvedSourceId && s.externalId === resolvedExternalId);
         if (ref) ref.lastSeen = new Date();
         await this.adapter.put('entities', entity.id, entity);
         return { entity, isNew: false, confidence: 1.0 };
@@ -183,39 +250,38 @@ class EntityAPI {
     }
     
     // Try fuzzy matching against existing entities
-    const minConfidence = options?.minConfidence ?? 0.7;
-    const match = await this.findBestMatch(type, name, options?.email, options?.aliases);
+    const match = await this.findBestMatch(type, resolvedName, email, aliases);
     
     if (match && match.score >= minConfidence) {
       const entity = match.entity;
       
       // Merge: add source ref
       entity.sources.push({
-        sourceId,
-        externalId,
+        sourceId: resolvedSourceId,
+        externalId: resolvedExternalId,
         confidence: match.score,
         lastSeen: new Date(),
       });
       
       // Add alias
-      if (!entity.aliases.includes(name) && entity.name !== name) {
-        entity.aliases.push(name);
+      if (!entity.aliases.includes(resolvedName) && entity.name !== resolvedName) {
+        entity.aliases.push(resolvedName);
       }
       
       // Merge attributes
-      if (options?.attributes) {
+      if (attributes) {
         const now = new Date();
-        for (const [key, value] of Object.entries(options.attributes)) {
+        for (const [key, value] of Object.entries(attributes)) {
           const existing = entity.attributes[key];
           if (existing) {
             const current = existing.history.find(h => h.validTo === null);
             if (current) current.validTo = now;
-            existing.history.push({ value, validFrom: now, validTo: null, source: sourceId });
+            existing.history.push({ value, validFrom: now, validTo: null, source: resolvedSourceId });
             existing.current = value;
           } else {
             entity.attributes[key] = {
               current: value,
-              history: [{ value, validFrom: now, validTo: null, source: sourceId }],
+              history: [{ value, validFrom: now, validTo: null, source: resolvedSourceId }],
             };
           }
         }
@@ -231,31 +297,31 @@ class EntityAPI {
     // Create new entity
     const id = `ent_${crypto.randomBytes(12).toString('hex')}`;
     const now = new Date();
-    const attributes: Record<string, TemporalValue<unknown>> = {};
+    const entityAttrs: Record<string, TemporalValue<unknown>> = {};
     
-    if (options?.attributes) {
-      for (const [key, value] of Object.entries(options.attributes)) {
-        attributes[key] = {
+    if (attributes) {
+      for (const [key, value] of Object.entries(attributes)) {
+        entityAttrs[key] = {
           current: value,
-          history: [{ value, validFrom: now, validTo: null, source: sourceId }],
+          history: [{ value, validFrom: now, validTo: null, source: resolvedSourceId }],
         };
       }
     }
     
-    if (options?.email) {
-      attributes['email'] = {
-        current: options.email,
-        history: [{ value: options.email, validFrom: now, validTo: null, source: sourceId }],
+    if (email) {
+      entityAttrs['email'] = {
+        current: email,
+        history: [{ value: email, validFrom: now, validTo: null, source: resolvedSourceId }],
       };
     }
     
     const entity: Entity = {
       id,
       type,
-      name,
-      aliases: options?.aliases || [],
-      sources: [{ sourceId, externalId, confidence: 1.0, lastSeen: now }],
-      attributes,
+      name: resolvedName,
+      aliases: aliases || [],
+      sources: [{ sourceId: resolvedSourceId, externalId: resolvedExternalId, confidence: 1.0, lastSeen: now }],
+      attributes: entityAttrs,
       createdAt: now,
       updatedAt: now,
     };
@@ -660,14 +726,14 @@ class VectorAPI {
   /** Store a vector */
   async store(collection: string, key: string, vector: number[], metadata?: Record<string, unknown>): Promise<void> {
     const v = this.vec;
-    if (!v) throw new Error('Vector search requires a VectorAdapter. Use MemoryVectorAdapter or VectorOverlay.');
+    if (!v) throw new AdapterCapabilityError('vector.store()', 'a VectorAdapter (use MemoryVectorAdapter or VectorOverlay)');
     await v.putVector(collection, key, vector, metadata);
   }
   
   /** Search by vector similarity */
   async search(collection: string, vector: number[], topK: number = 10, minScore?: number): Promise<VectorResult[]> {
     const v = this.vec;
-    if (!v) throw new Error('Vector search requires a VectorAdapter.');
+    if (!v) throw new AdapterCapabilityError('vector.search()', 'a VectorAdapter (use MemoryVectorAdapter or VectorOverlay)');
     return v.searchVector(collection, vector, topK, minScore);
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "dpth",
   "version": "0.3.0",
-  "description": "The distributed intelligence layer — decentralized AI inference, data intelligence, and agent coordination.",
+  "description": "Entity resolution, temporal history, and correlation detection for TypeScript. Zero dependencies.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,21 +26,9 @@
       "import": "./dist/embed.js",
       "types": "./dist/embed.d.ts"
     },
-    "./agent-sdk": {
-      "import": "./dist/agent-sdk.js",
-      "types": "./dist/agent-sdk.d.ts"
-    },
-    "./fallback": {
-      "import": "./dist/fallback.js",
-      "types": "./dist/fallback.d.ts"
-    },
-    "./economics": {
-      "import": "./dist/economics.js",
-      "types": "./dist/economics.d.ts"
-    },
-    "./federation": {
-      "import": "./dist/federation.js",
-      "types": "./dist/federation.d.ts"
+    "./experimental": {
+      "import": "./dist/experimental/index.js",
+      "types": "./dist/experimental/index.d.ts"
     },
     "./storage": {
       "import": "./dist/storage.js",
@@ -72,16 +60,16 @@
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
-    "decentralized",
-    "ai",
-    "inference",
-    "intelligence",
-    "agents",
-    "distributed",
-    "p2p",
     "entity-resolution",
+    "identity-resolution",
+    "data-matching",
+    "temporal-data",
     "correlation",
-    "temporal-data"
+    "cross-api",
+    "data-layer",
+    "typescript",
+    "fuzzy-matching",
+    "time-series"
   ],
   "author": "dpth.io contributors",
   "license": "MIT",
