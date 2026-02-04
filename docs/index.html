@@ -575,28 +575,72 @@
       <p>Four modules, four real use cases. Copy-paste into your project and go.</p>
 
       <div class="code-tabs">
-        <button class="code-tab active" onclick="showTab('entities')">Entity Resolution</button>
-        <button class="code-tab" onclick="showTab('agent')">Agent SDK</button>
-        <button class="code-tab" onclick="showTab('economics')">Economics</button>
-        <button class="code-tab" onclick="showTab('federation')">Federation</button>
+        <button class="code-tab active" onclick="showTab('quick')">Quick Start</button>
+        <button class="code-tab" onclick="showTab('temporal')">Temporal History</button>
+        <button class="code-tab" onclick="showTab('persist')">Persistence</button>
+        <button class="code-tab" onclick="showTab('agent')">Agent Network</button>
       </div>
 
-      <div class="code-block active" id="tab-entities">
-<span class="kw">import</span> { resolveOrCreate, getEntitiesByType } <span class="kw">from</span> <span class="str">'dpth/entity'</span>;
-<span class="kw">import</span> { registerMetric, addMetricPoints } <span class="kw">from</span> <span class="str">'dpth/correlation'</span>;
-<span class="kw">import</span> { takeSnapshot, diffSnapshots } <span class="kw">from</span> <span class="str">'dpth/temporal'</span>;
+      <div class="code-block active" id="tab-quick">
+<span class="kw">import</span> { dpth } <span class="kw">from</span> <span class="str">'dpth/dpth'</span>;
 
-<span class="cm">// Same person from different sources → one identity</span>
-<span class="kw">const</span> { entity, isNew } = <span class="fn">resolveOrCreate</span>(<span class="str">'person'</span>, <span class="str">'Jane Smith'</span>, <span class="str">'github'</span>, <span class="str">'jsmith'</span>);
+<span class="kw">const</span> db = <span class="fn">dpth</span>();
 
-<span class="cm">// Track metrics with correlation detection</span>
-<span class="fn">registerMetric</span>({
-  id: <span class="str">'mrr'</span>, entityId: entity.id, name: <span class="str">'MRR'</span>,
-  points: [], aggregation: <span class="str">'sum'</span>
+<span class="cm">// Same person in Stripe and GitHub → merged automatically</span>
+<span class="kw">await</span> db.entity.<span class="fn">resolve</span>(<span class="str">'person'</span>, <span class="str">'John Smith'</span>, <span class="str">'stripe'</span>, <span class="str">'cus_123'</span>, {
+  email: <span class="str">'john@company.com'</span>
+});
+<span class="kw">await</span> db.entity.<span class="fn">resolve</span>(<span class="str">'person'</span>, <span class="str">'jsmith'</span>, <span class="str">'github'</span>, <span class="str">'jsmith-gh'</span>, {
+  email: <span class="str">'john@company.com'</span>
+});
+<span class="cm">// ^ auto-merged — one entity, two sources</span>
+
+<span class="cm">// Track metrics, dpth finds correlations</span>
+<span class="kw">await</span> db.correlation.<span class="fn">track</span>(<span class="str">'mrr'</span>, <span class="num">50000</span>);
+<span class="kw">await</span> db.correlation.<span class="fn">track</span>(<span class="str">'deploys'</span>, <span class="num">12</span>);
+<span class="kw">const</span> patterns = <span class="kw">await</span> db.correlation.<span class="fn">find</span>(<span class="str">'mrr'</span>);
+      </div>
+
+      <div class="code-block" id="tab-temporal">
+<span class="kw">import</span> { dpth } <span class="kw">from</span> <span class="str">'dpth/dpth'</span>;
+
+<span class="kw">const</span> db = <span class="fn">dpth</span>();
+
+<span class="cm">// Snapshot your data — every version is saved</span>
+<span class="kw">await</span> db.temporal.<span class="fn">snapshot</span>(<span class="str">'dashboard'</span>, { revenue: <span class="num">50000</span>, users: <span class="num">200</span> });
+<span class="cm">// ... time passes ...</span>
+<span class="kw">await</span> db.temporal.<span class="fn">snapshot</span>(<span class="str">'dashboard'</span>, { revenue: <span class="num">55000</span>, users: <span class="num">220</span> });
+
+<span class="cm">// Full timeline</span>
+<span class="kw">const</span> history = <span class="kw">await</span> db.temporal.<span class="fn">history</span>(<span class="str">'dashboard'</span>);
+
+<span class="cm">// Automatic diffing — what changed?</span>
+<span class="kw">const</span> diff = db.temporal.<span class="fn">diff</span>(history[<span class="num">0</span>], history[<span class="num">1</span>]);
+<span class="cm">// { changed: [{ key: 'revenue', from: 50000, to: 55000 }] }</span>
+
+<span class="cm">// Time travel — what did it look like last Tuesday?</span>
+<span class="kw">const</span> past = <span class="kw">await</span> db.temporal.<span class="fn">at</span>(<span class="str">'dashboard'</span>, <span class="kw">new</span> Date(<span class="str">'2025-01-15'</span>));
+      </div>
+
+      <div class="code-block" id="tab-persist">
+<span class="cm">// Default: in-memory (zero config)</span>
+<span class="kw">const</span> db = <span class="fn">dpth</span>();
+
+<span class="cm">// Add SQLite: survives restarts</span>
+<span class="kw">import</span> { SQLiteAdapter } <span class="kw">from</span> <span class="str">'dpth/adapter-sqlite'</span>;
+<span class="kw">import</span> { configure } <span class="kw">from</span> <span class="str">'dpth/storage'</span>;
+<span class="fn">configure</span>({ adapter: <span class="kw">new</span> <span class="fn">SQLiteAdapter</span>(<span class="str">'./myapp.db'</span>) });
+
+<span class="cm">// Add vectors: semantic search on top of SQLite</span>
+<span class="kw">import</span> { VectorOverlay } <span class="kw">from</span> <span class="str">'dpth/adapter-vector'</span>;
+<span class="fn">configure</span>({
+  adapter: <span class="kw">new</span> <span class="fn">VectorOverlay</span>(
+    <span class="kw">new</span> <span class="fn">SQLiteAdapter</span>(<span class="str">'./myapp.db'</span>)
+  )
 });
 
-<span class="cm">// Every value has history</span>
-<span class="fn">takeSnapshot</span>(<span class="str">'dashboard'</span>, { revenue: <span class="num">50000</span>, users: <span class="num">200</span> });
+<span class="cm">// Or write your own — implement StorageAdapter</span>
+<span class="cm">// for Redis, DuckDB, S3, anything</span>
       </div>
 
       <div class="code-block" id="tab-agent">
@@ -604,7 +648,7 @@
 
 <span class="kw">const</span> agent = <span class="kw">new</span> <span class="fn">DpthAgent</span>({
   name: <span class="str">'my-agent'</span>,
-  apiUrl: <span class="str">'https://your-dpth-instance/api/dpth'</span>,
+  apiUrl: <span class="str">'https://your-instance/api/dpth'</span>,
   capabilities: {
     storageCapacityMb: <span class="num">10000</span>,
     cpuCores: <span class="num">8</span>,
@@ -614,48 +658,9 @@
   }
 });
 
-<span class="cm">// Register and start contributing</span>
+<span class="cm">// Join the network — contribute resources, earn credits</span>
 <span class="kw">await</span> agent.<span class="fn">register</span>();
 <span class="kw">await</span> agent.<span class="fn">startWorking</span>();
-      </div>
-
-      <div class="code-block" id="tab-economics">
-<span class="kw">import</span> { earnCredits, chargeInference, getBalance } <span class="kw">from</span> <span class="str">'dpth/economics'</span>;
-
-<span class="cm">// Earn by contributing GPU inference</span>
-<span class="fn">earnCredits</span>(agentId, <span class="num">25</span>, <span class="str">'GPU inference task'</span>, <span class="str">'gpu'</span>, { tier: <span class="str">'elite'</span> });
-<span class="cm">// Elite tier: 25 × 2.0x = 50 credits</span>
-
-<span class="cm">// Spend on inference requests</span>
-<span class="fn">chargeInference</span>(agentId, <span class="num">1500</span>, <span class="str">'req-001'</span>);
-<span class="cm">// Cost: 10 base + (1500/1000) × 2 = 13 credits</span>
-
-<span class="cm">// Check balance</span>
-<span class="kw">const</span> bal = <span class="fn">getBalance</span>(agentId);
-console.<span class="fn">log</span>(bal.balance, bal.totalEarned, bal.totalSpent);
-      </div>
-
-      <div class="code-block" id="tab-federation">
-<span class="kw">import</span> { registerBaseModel, createTrainingRound, aggregateRound } <span class="kw">from</span> <span class="str">'dpth/federation'</span>;
-
-<span class="cm">// Register a model family</span>
-<span class="fn">registerBaseModel</span>(<span class="str">'dpth-entity-8b'</span>, <span class="str">'QmBaseModelCID'</span>);
-
-<span class="cm">// Create a federated training round</span>
-<span class="kw">const</span> round = <span class="fn">createTrainingRound</span>(<span class="str">'dpth-entity-8b'</span>, {
-  learningRate: <span class="num">0.0001</span>,
-  localEpochs: <span class="num">3</span>,
-  loraRank: <span class="num">16</span>,
-  loraAlpha: <span class="num">32</span>,
-  targetModules: [<span class="str">'q_proj'</span>, <span class="str">'v_proj'</span>],
-  maxGradNorm: <span class="num">1.0</span>,
-  dpEpsilon: <span class="num">8.0</span>,  <span class="cm">// differential privacy</span>
-  <span class="cm">// ...</span>
-});
-
-<span class="cm">// After agents submit deltas → aggregate</span>
-<span class="kw">const</span> v2 = <span class="fn">aggregateRound</span>(round.id, <span class="str">'fedmedian'</span>);
-<span class="cm">// Byzantine-tolerant median aggregation</span>
       </div>
     </div>
   </section>
@@ -665,20 +670,20 @@ console.<span class="fn">log</span>(bal.balance, bal.totalEarned, bal.totalSpent
     <div class="container">
       <div class="stats-grid">
         <div>
-          <div class="stat-value">10</div>
-          <div class="stat-label">Core Modules</div>
+          <div class="stat-value">15</div>
+          <div class="stat-label">Modules</div>
         </div>
         <div>
-          <div class="stat-value">4.3k</div>
-          <div class="stat-label">Lines of Code</div>
-        </div>
-        <div>
-          <div class="stat-value">63</div>
+          <div class="stat-value">171</div>
           <div class="stat-label">Tests Passing</div>
         </div>
         <div>
-          <div class="stat-value">59KB</div>
+          <div class="stat-value">79KB</div>
           <div class="stat-label">Package Size</div>
+        </div>
+        <div>
+          <div class="stat-value">0</div>
+          <div class="stat-label">Dependencies</div>
         </div>
       </div>
     </div>
