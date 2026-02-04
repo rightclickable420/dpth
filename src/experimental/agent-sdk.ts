@@ -155,6 +155,14 @@ export class DpthAgent {
   }
   
   /**
+   * Send heartbeat — tell the coordinator this agent is still alive.
+   */
+  async heartbeat(): Promise<void> {
+    if (!this.agentId) return;
+    await this.fetch(`/agents/${this.agentId}/heartbeat`, { method: 'POST' });
+  }
+  
+  /**
    * Deregister from the network
    */
   async deregister(): Promise<void> {
@@ -172,8 +180,7 @@ export class DpthAgent {
    * Fetch available tasks
    */
   async getTasks(limit = 10): Promise<Task[]> {
-    const types = this.config.capabilities.taskTypes.join(',');
-    const response = await this.fetch(`/tasks?limit=${limit}&type=${types}`);
+    const response = await this.fetch(`/tasks?status=pending`);
     
     if (!response.ok) {
       throw new Error('Failed to fetch tasks');
@@ -187,10 +194,9 @@ export class DpthAgent {
    * Claim a task for processing
    */
   async claimTask(taskId: string): Promise<Task> {
-    const response = await this.fetch('/tasks?action=claim', {
+    const response = await this.fetch(`/tasks/${taskId}/claim`, {
       method: 'POST',
       body: JSON.stringify({
-        taskId,
         agentId: this.agentId,
       }),
     });
@@ -208,13 +214,12 @@ export class DpthAgent {
    * Complete a task with results
    */
   async completeTask(taskId: string, result: TaskResult): Promise<void> {
-    const response = await this.fetch('/tasks?action=complete', {
+    const response = await this.fetch(`/tasks/${taskId}/complete`, {
       method: 'POST',
       body: JSON.stringify({
-        taskId,
         agentId: this.agentId,
-        success: result.success,
-        output: result.output,
+        result: result.output,
+        reward: 5,
       }),
     });
     
