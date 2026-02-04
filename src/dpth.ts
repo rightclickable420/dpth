@@ -576,36 +576,36 @@ class TemporalAPI {
       source,
     };
     
-    // Store snapshot
+    // Store snapshot directly — no separate index needed.
+    // history() uses query({ where: { key } }) to find all snapshots for a key.
+    // This avoids the old approach of maintaining a JSON array index that grew unbounded.
     await this.adapter.put('snapshots', record.id, record);
-    
-    // Maintain index: key → [snapshot_ids]
-    const index = (await this.adapter.get('snapshot_index', key) as string[] | undefined) || [];
-    index.push(record.id);
-    await this.adapter.put('snapshot_index', key, index);
     
     return record;
   }
   
   /** Get all snapshots for a key (ordered by time) */
-  async history<T = Record<string, unknown>>(key: string): Promise<SnapshotRecord<T>[]> {
-    const index = (await this.adapter.get('snapshot_index', key) as string[] | undefined) || [];
-    const records: SnapshotRecord<T>[] = [];
+  async history<T = Record<string, unknown>>(key: string, options?: { limit?: number; offset?: number }): Promise<SnapshotRecord<T>[]> {
+    const records = await this.adapter.query({
+      collection: 'snapshots',
+      where: { key },
+      orderBy: { field: 'timestamp', direction: 'asc' },
+      ...(options?.limit ? { limit: options.limit } : {}),
+      ...(options?.offset ? { offset: options.offset } : {}),
+    }) as SnapshotRecord<T>[];
     
-    for (const id of index) {
-      const record = await this.adapter.get('snapshots', id) as SnapshotRecord<T> | undefined;
-      if (record) records.push(record);
-    }
-    
-    return records.sort((a, b) =>
-      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+    return records;
   }
   
   /** Get the latest snapshot for a key */
   async latest<T = Record<string, unknown>>(key: string): Promise<SnapshotRecord<T> | undefined> {
-    const all = await this.history<T>(key);
-    return all.length > 0 ? all[all.length - 1] : undefined;
+    const records = await this.adapter.query({
+      collection: 'snapshots',
+      where: { key },
+      orderBy: { field: 'timestamp', direction: 'desc' },
+      limit: 1,
+    }) as SnapshotRecord<T>[];
+    return records[0] ?? undefined;
   }
   
   /** Get snapshot closest to a specific time */
