@@ -228,36 +228,62 @@ export class DpthAgent {
     }
   }
   
-  // ── Resolution Signals (The Waze Layer) ──────────
+  // ── Signals (Open Vocabulary Network) ────────────
 
   /**
-   * Submit a resolution signal — share how well a matching rule works.
-   * This is the core of dpth's collective intelligence: agents share
-   * anonymized statistics about entity matching, making everyone's
-   * resolution smarter.
+   * Submit a signal — share an outcome with the network.
+   * Open vocabulary: any domain, context, strategy, condition.
    * 
-   * Example:
+   * Example (entity resolution):
    *   await agent.submitSignal({
-   *     schema: 'stripe+github',
-   *     rule: 'email_exact_match',
-   *     truePositives: 847,
-   *     falsePositives: 12,
+   *     domain: 'identity',
+   *     context: 'stripe+github',
+   *     strategy: 'email_match',
+   *     successes: 847,
+   *     failures: 12,
    *     totalAttempts: 859,
+   *   });
+   * 
+   * Example (tool selection):
+   *   await agent.submitSignal({
+   *     domain: 'tool_selection',
+   *     context: 'summarize_url',
+   *     strategy: 'web_fetch',
+   *     condition: 'static_site',
+   *     successes: 47,
+   *     failures: 3,
+   *     totalAttempts: 50,
+   *     cost: 250,
    *   });
    */
   async submitSignal(signal: {
-    schema: string;
-    rule: string;
+    domain?: string;
+    context?: string;
+    strategy?: string;
+    condition?: string;
+    successes?: number;
+    failures?: number;
+    totalAttempts?: number;
+    cost?: number;
+    // Backward compat
+    schema?: string;
+    rule?: string;
     modifier?: string;
-    truePositives: number;
-    falsePositives: number;
-    totalAttempts: number;
-  }): Promise<{ id: string; precision: number }> {
+    truePositives?: number;
+    falsePositives?: number;
+  }): Promise<{ accepted: boolean; bucket: Record<string, unknown> }> {
     const response = await this.fetch('/signals', {
       method: 'POST',
       body: JSON.stringify({
-        ...signal,
         agentId: this.agentId,
+        domain: signal.domain || 'identity',
+        context: signal.context || signal.schema,
+        strategy: signal.strategy || signal.rule,
+        condition: signal.condition || signal.modifier,
+        successes: signal.successes ?? signal.truePositives,
+        failures: signal.failures ?? signal.falsePositives,
+        totalAttempts: signal.totalAttempts,
+        cost: signal.cost,
       }),
     });
     
@@ -265,17 +291,54 @@ export class DpthAgent {
       throw new Error('Failed to submit signal');
     }
     
-    const result = await response.json();
-    return { id: result.signal.id, precision: result.signal.precision };
+    return await response.json();
   }
   
   /**
-   * Get calibration data — ask the network how well a matching rule works.
-   * Returns aggregate precision from all contributing agents.
+   * Query what the network knows. Open query — filter by any combination.
    * 
    * Example:
-   *   const cal = await agent.getCalibration('stripe+github', 'email_exact_match');
-   *   // { precision: 0.986, confidence: 0.859, contributorCount: 47 }
+   *   const results = await agent.calibrate({ domain: 'tool_selection', context: 'summarize_url' });
+   *   // → [{ strategy: 'web_fetch', successRate: 0.94, avgCost: 5, ... }, ...]
+   */
+  async calibrate(opts: {
+    domain?: string;
+    context?: string;
+    strategy?: string;
+    condition?: string;
+  }): Promise<{
+    calibration: Array<{
+      domain: string;
+      context: string;
+      strategy: string;
+      condition: string;
+      successRate: number;
+      failureRate: number;
+      avgCost: number;
+      confidence: number;
+      attempts: number;
+      contributions: number;
+    }> | null;
+    count: number;
+  }> {
+    const params = new URLSearchParams();
+    if (opts.domain) params.set('domain', opts.domain);
+    if (opts.context) params.set('context', opts.context);
+    if (opts.strategy) params.set('strategy', opts.strategy);
+    if (opts.condition) params.set('condition', opts.condition);
+    
+    const response = await this.fetch(`/calibrate?${params}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to get calibration');
+    }
+    
+    return await response.json();
+  }
+
+  /**
+   * Backward-compatible: get calibration for entity resolution.
+   * @deprecated Use calibrate() instead
    */
   async getCalibration(schema: string, rule: string): Promise<{
     precision: number;
@@ -283,16 +346,15 @@ export class DpthAgent {
     totalAttempts: number;
     contributorCount: number;
   } | null> {
-    const response = await this.fetch(
-      `/signals/calibrate?schema=${encodeURIComponent(schema)}&rule=${encodeURIComponent(rule)}`
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to get calibration');
-    }
-    
-    const result = await response.json();
-    return result.calibration;
+    const result = await this.calibrate({ domain: 'identity', context: schema, strategy: rule });
+    if (!result.calibration || result.calibration.length === 0) return null;
+    const first = result.calibration[0];
+    return {
+      precision: first.successRate,
+      confidence: first.confidence,
+      totalAttempts: first.attempts,
+      contributorCount: first.contributions,
+    };
   }
 
   // ── Storage ────────────────────────────────────────

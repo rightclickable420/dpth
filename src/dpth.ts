@@ -126,6 +126,8 @@ export class Dpth {
   public correlation: CorrelationAPI;
   /** Vector search (if adapter supports it) */
   public vector: VectorAPI;
+  /** Network signals — report outcomes, query calibration (requires network: true) */
+  public signal: SignalAPI;
   
   constructor(options: DpthOptions = {}) {
     this.adapter = options.adapter || new MemoryAdapter();
@@ -138,6 +140,7 @@ export class Dpth {
     this.temporal = new TemporalAPI(this.adapter);
     this.correlation = new CorrelationAPI(this.adapter);
     this.vector = new VectorAPI(this.adapter);
+    this.signal = new SignalAPI(this._network);
     
     this._ready = this.init(options);
   }
@@ -153,6 +156,7 @@ export class Dpth {
         this.temporal = new TemporalAPI(this.adapter);
         this.correlation = new CorrelationAPI(this.adapter);
         this.vector = new VectorAPI(this.adapter);
+        this.signal = new SignalAPI(this._network);
       } catch {
         // SQLite not available, fall back to memory
         console.warn('dpth: better-sqlite3 not installed, using in-memory storage');
@@ -860,6 +864,100 @@ class VectorAPI {
   }
 }
 
+// ─── Signal API (Open Vocabulary Network) ────────────
+
+/**
+ * Public API for submitting and querying network signals.
+ * Agents can report outcomes for ANY domain — not just entity resolution.
+ * 
+ * The network learns what works from what agents actually report.
+ * No closed vocabulary. Statistical convergence determines what's useful.
+ * 
+ * @example
+ * const db = dpth({ network: true });
+ * 
+ * // Report a tool selection outcome
+ * db.signal.report({
+ *   domain: 'tool_selection',
+ *   context: 'summarize_url',
+ *   strategy: 'web_fetch',
+ *   condition: 'static_site',
+ *   success: true,
+ *   cost: 5,
+ * });
+ * 
+ * // Query what the network knows
+ * const results = await db.signal.query({ domain: 'tool_selection', context: 'summarize_url' });
+ * // → [{ strategy: 'web_fetch', condition: 'static_site', successRate: 0.94, avgCost: 5 }, ...]
+ */
+class SignalAPI {
+  constructor(private network: NetworkLayer | null) {}
+  
+  /**
+   * Report an outcome to the network. Accumulated locally, flushed periodically.
+   * 
+   * @param signal.domain - What kind of task (identity, tool_selection, api_reliability, etc.)
+   * @param signal.context - The situation (e.g., "stripe+github", "summarize_url", "timeout+openai")
+   * @param signal.strategy - What approach was tried (e.g., "email_match", "web_fetch", "retry_30s")
+   * @param signal.condition - Optional modifier (e.g., "corporate_domain", "peak_hours", "static_site")
+   * @param signal.success - Did it work?
+   * @param signal.cost - Optional cost in tokens/ms/calls (agent-defined units)
+   */
+  report(signal: {
+    domain: string;
+    context: string;
+    strategy: string;
+    condition?: string;
+    success: boolean;
+    cost?: number;
+  }): void {
+    if (!this.network) {
+      // Silently ignore when network is not enabled — don't break user code
+      return;
+    }
+    this.network.recordSignal(
+      signal.domain,
+      signal.context,
+      signal.strategy,
+      signal.condition || 'none',
+      signal.success,
+      signal.cost,
+    );
+  }
+  
+  /**
+   * Query what the network knows about a given context.
+   * Returns calibration data sorted by confidence (most data first).
+   * 
+   * Returns null if network is not enabled or not reachable.
+   */
+  async query(opts: {
+    domain?: string;
+    context?: string;
+    strategy?: string;
+    condition?: string;
+  }): Promise<Array<{
+    domain: string;
+    context: string;
+    strategy: string;
+    condition: string;
+    successRate: number;
+    failureRate: number;
+    avgCost: number;
+    confidence: number;
+    attempts: number;
+    contributions: number;
+  }> | null> {
+    if (!this.network) return null;
+    return this.network.calibrate(opts);
+  }
+  
+  /** Whether the network is enabled and connected */
+  get connected(): boolean {
+    return this.network !== null;
+  }
+}
+
 // ─── Factory Function ────────────────────────────────
 
 /**
@@ -898,25 +996,30 @@ const FLUSH_THRESHOLD = 50; // Flush after this many resolutions
  * aggregated, anonymized signals to the dpth network.
  * 
  * Never sends entity data, names, emails, or any PII.
- * Only sends: which matching rules work, how accurately, for which source combos.
+ * Only sends: which strategies work, how accurately, for which contexts.
+ * 
+ * Open vocabulary — agents can submit signals for any domain, not just identity.
  */
 class NetworkLayer {
   private coordinatorUrl: string;
   private agentId: string | null = null;
   
   /** 
-   * Local accumulator: schema+rule → { truePositives, falsePositives, total }
+   * Local accumulator: domain:context:strategy → { successes, failures, total, cost }
    * Flushed to the network when threshold is hit or on close().
    */
   private signals = new Map<string, {
-    schema: string;
-    rule: string;
-    truePositives: number;
-    falsePositives: number;
+    domain: string;
+    context: string;
+    strategy: string;
+    condition: string;
+    successes: number;
+    failures: number;
     totalAttempts: number;
+    cost: number;
   }>();
   
-  private resolutionCount = 0;
+  private signalCount = 0;
   
   constructor(coordinatorUrl?: string) {
     this.coordinatorUrl = coordinatorUrl || DEFAULT_COORDINATOR;
@@ -939,36 +1042,49 @@ class NetworkLayer {
   }
   
   /**
-   * Record a resolution outcome locally. Called by EntityAPI on every merge.
-   * No network call here — just accumulates stats in memory.
+   * Record an outcome locally. Accumulates stats in memory, flushed to network periodically.
+   * 
+   * For entity resolution (called internally by EntityAPI on merges):
+   *   recordSignal('identity', 'stripe+github', 'email_exact', 'corporate_domain', true)
+   * 
+   * For any other domain (called by user code):
+   *   recordSignal('tool_selection', 'summarize_url', 'web_fetch', 'static_site', true, 5)
    */
-  recordResolution(schema: string, rule: string, success: boolean): void {
-    const key = `${schema}:${rule}`;
+  recordSignal(domain: string, context: string, strategy: string, condition: string, success: boolean, cost?: number): void {
+    const key = `${domain}:${context}:${strategy}:${condition}`;
     let signal = this.signals.get(key);
     
     if (!signal) {
-      signal = { schema, rule, truePositives: 0, falsePositives: 0, totalAttempts: 0 };
+      signal = { domain, context, strategy, condition, successes: 0, failures: 0, totalAttempts: 0, cost: 0 };
       this.signals.set(key, signal);
     }
     
     signal.totalAttempts++;
     if (success) {
-      signal.truePositives++;
+      signal.successes++;
     } else {
-      signal.falsePositives++;
+      signal.failures++;
     }
+    if (cost) signal.cost += cost;
     
-    this.resolutionCount++;
+    this.signalCount++;
     
-    // Auto-flush when we hit the threshold
-    if (this.resolutionCount >= FLUSH_THRESHOLD) {
-      this.flush().catch(() => {}); // Best-effort, never block
+    if (this.signalCount >= FLUSH_THRESHOLD) {
+      this.flush().catch(() => {});
     }
   }
   
   /**
+   * Backward-compatible: record an entity resolution outcome.
+   * Translates to the new open signal format.
+   */
+  recordResolution(schema: string, rule: string, success: boolean): void {
+    this.recordSignal('identity', schema, rule, 'none', success);
+  }
+  
+  /**
    * Flush accumulated signals to the network.
-   * Called automatically every FLUSH_THRESHOLD resolutions, and on close().
+   * Called automatically every FLUSH_THRESHOLD signals, and on close().
    */
   async flush(): Promise<void> {
     if (!this.agentId || this.signals.size === 0) return;
@@ -976,7 +1092,7 @@ class NetworkLayer {
     const promises: Promise<void>[] = [];
     
     for (const signal of this.signals.values()) {
-      if (signal.totalAttempts < 1) continue; // Submit even small samples (network aggregates)
+      if (signal.totalAttempts < 1) continue;
       
       promises.push(
         fetch(`${this.coordinatorUrl}/signals`, {
@@ -984,37 +1100,76 @@ class NetworkLayer {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             agentId: this.agentId,
-            ...signal,
+            domain: signal.domain,
+            context: signal.context,
+            strategy: signal.strategy,
+            condition: signal.condition,
+            successes: signal.successes,
+            failures: signal.failures,
+            totalAttempts: signal.totalAttempts,
+            cost: signal.cost,
           }),
-        }).then(() => {}).catch(() => {}) // Best-effort
+        }).then(() => {}).catch(() => {})
       );
     }
     
     await Promise.all(promises);
     
-    // Reset accumulators
     this.signals.clear();
-    this.resolutionCount = 0;
+    this.signalCount = 0;
   }
   
   /**
-   * Ask the network for calibration data on a matching rule.
-   * Used to improve local matching confidence thresholds.
+   * Ask the network what it knows about a given context.
+   * Open query — filter by any combination of domain, context, strategy, condition.
    */
-  async getCalibration(schema: string, rule: string): Promise<{
-    precision: number;
+  async calibrate(opts: {
+    domain?: string;
+    context?: string;
+    strategy?: string;
+    condition?: string;
+  }): Promise<Array<{
+    domain: string;
+    context: string;
+    strategy: string;
+    condition: string;
+    successRate: number;
+    failureRate: number;
+    avgCost: number;
     confidence: number;
-    contributorCount: number;
-  } | null> {
+    attempts: number;
+    contributions: number;
+  }> | null> {
     try {
-      const res = await fetch(
-        `${this.coordinatorUrl}/signals/calibrate?schema=${encodeURIComponent(schema)}&rule=${encodeURIComponent(rule)}`
-      );
+      const params = new URLSearchParams();
+      if (opts.domain) params.set('domain', opts.domain);
+      if (opts.context) params.set('context', opts.context);
+      if (opts.strategy) params.set('strategy', opts.strategy);
+      if (opts.condition) params.set('condition', opts.condition);
+      
+      const res = await fetch(`${this.coordinatorUrl}/calibrate?${params}`);
       if (!res.ok) return null;
       const data = await res.json();
       return data.calibration;
     } catch {
       return null;
     }
+  }
+  
+  /**
+   * Backward-compatible: get calibration for entity resolution.
+   */
+  async getCalibration(schema: string, rule: string): Promise<{
+    precision: number;
+    confidence: number;
+    contributorCount: number;
+  } | null> {
+    const results = await this.calibrate({ domain: 'identity', context: schema, strategy: rule });
+    if (!results || results.length === 0) return null;
+    return {
+      precision: results[0].successRate,
+      confidence: results[0].confidence,
+      contributorCount: results[0].contributions,
+    };
   }
 }
