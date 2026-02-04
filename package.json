@@ -85,7 +85,7 @@
     "node": ">=18"
   },
   "peerDependencies": {
-    "better-sqlite3": ">=11.0.0"
+    "better-sqlite3": "^12.6.2"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {
@@ -100,5 +100,9 @@
     "react-dom": "^19.2.4",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.9",
+    "hono": "^4.11.7"
   }
 }
