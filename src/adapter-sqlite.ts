@@ -80,6 +80,19 @@ export class SQLiteAdapter implements StorageAdapter {
       CREATE INDEX IF NOT EXISTS idx_dpth_collection ON dpth_store(collection);
       CREATE INDEX IF NOT EXISTS idx_dpth_updated ON dpth_store(collection, updated_at);
     `);
+    
+    // Computed indexes on common JSON fields for fast entity queries
+    // json_extract requires SQLite 3.38+ (available since 2022)
+    try {
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_dpth_type 
+          ON dpth_store(collection, json_extract(value, '$.type'));
+        CREATE INDEX IF NOT EXISTS idx_dpth_email 
+          ON dpth_store(collection, json_extract(value, '$.attributes.email.current'));
+      `);
+    } catch {
+      // Older SQLite without json_extract — fall back to JS filtering
+    }
   }
   
   private async ensureReady(): Promise<void> {
@@ -149,29 +162,111 @@ export class SQLiteAdapter implements StorageAdapter {
   
   async query(filter: QueryFilter): Promise<unknown[]> {
     await this.ensureReady();
-    // Get all items in collection, then filter in JS
-    // (JSON values can't be efficiently queried in SQL without json_extract)
+    
+    // Build SQL query using json_extract for filtering
+    const params: unknown[] = [filter.collection];
+    const clauses: string[] = ['collection = ?'];
+    
+    // Push where filters to SQL via json_extract
+    if (filter.where) {
+      for (const [field, value] of Object.entries(filter.where)) {
+        clauses.push(`json_extract(value, '$.${this.escapeJsonPath(field)}') = ?`);
+        params.push(value);
+      }
+    }
+    
+    // Push comparison filters to SQL via json_extract
+    if (filter.compare) {
+      for (const cmp of filter.compare) {
+        const jsonPath = `json_extract(value, '$.${this.escapeJsonPath(cmp.field)}')`;
+        switch (cmp.op) {
+          case 'gt':
+            clauses.push(`${jsonPath} > ?`);
+            params.push(cmp.value);
+            break;
+          case 'gte':
+            clauses.push(`${jsonPath} >= ?`);
+            params.push(cmp.value);
+            break;
+          case 'lt':
+            clauses.push(`${jsonPath} < ?`);
+            params.push(cmp.value);
+            break;
+          case 'lte':
+            clauses.push(`${jsonPath} <= ?`);
+            params.push(cmp.value);
+            break;
+          case 'ne':
+            clauses.push(`${jsonPath} != ?`);
+            params.push(cmp.value);
+            break;
+          case 'in': {
+            const arr = cmp.value as unknown[];
+            if (arr.length > 0) {
+              clauses.push(`${jsonPath} IN (${arr.map(() => '?').join(', ')})`);
+              params.push(...arr);
+            } else {
+              clauses.push('0'); // empty IN → no results
+            }
+            break;
+          }
+          case 'contains':
+            clauses.push(`${jsonPath} LIKE ?`);
+            params.push(`%${cmp.value}%`);
+            break;
+        }
+      }
+    }
+    
+    // Build ORDER BY
+    let orderSql = '';
+    if (filter.orderBy) {
+      const dir = filter.orderBy.direction === 'desc' ? 'DESC' : 'ASC';
+      orderSql = ` ORDER BY json_extract(value, '$.${this.escapeJsonPath(filter.orderBy.field)}') ${dir}`;
+    }
+    
+    // Build LIMIT/OFFSET
+    let limitSql = '';
+    if (filter.limit) {
+      limitSql += ` LIMIT ?`;
+      params.push(filter.limit);
+    }
+    if (filter.offset) {
+      if (!filter.limit) {
+        limitSql += ` LIMIT -1`; // SQLite requires LIMIT before OFFSET
+      }
+      limitSql += ` OFFSET ?`;
+      params.push(filter.offset);
+    }
+    
+    const sql = `SELECT value FROM dpth_store WHERE ${clauses.join(' AND ')}${orderSql}${limitSql}`;
+    
+    try {
+      const rows = this.db.prepare(sql).all(...params) as { value: string }[];
+      return rows.map(r => this.deserialize(r.value));
+    } catch {
+      // Fallback: if json_extract not available (SQLite < 3.38), use JS filtering
+      return this.queryFallback(filter);
+    }
+  }
+  
+  /** Fallback query using JS filtering (for SQLite versions without json_extract) */
+  private queryFallback(filter: QueryFilter): unknown[] {
     const rows = this.stmt('SELECT value FROM dpth_store WHERE collection = ?')
       .all(filter.collection) as { value: string }[];
     
     let results = rows.map(r => this.deserialize(r.value));
     
-    // Apply where filters
     if (filter.where) {
       for (const [field, value] of Object.entries(filter.where)) {
-        results = results.filter(item => {
-          const obj = item as Record<string, unknown>;
-          return obj[field] === value;
-        });
+        results = results.filter(item => (item as Record<string, unknown>)[field] === value);
       }
     }
     
-    // Apply comparison filters
     if (filter.compare) {
       for (const cmp of filter.compare) {
         results = results.filter(item => {
-          const obj = item as Record<string, unknown>;
-          const fieldVal = obj[cmp.field];
+          const fieldVal = (item as Record<string, unknown>)[cmp.field];
           switch (cmp.op) {
             case 'gt': return (fieldVal as number) > (cmp.value as number);
             case 'gte': return (fieldVal as number) >= (cmp.value as number);
@@ -186,7 +281,6 @@ export class SQLiteAdapter implements StorageAdapter {
       }
     }
     
-    // Apply ordering
     if (filter.orderBy) {
       const { field, direction } = filter.orderBy;
       results.sort((a, b) => {
@@ -198,11 +292,16 @@ export class SQLiteAdapter implements StorageAdapter {
       });
     }
     
-    // Apply pagination
     if (filter.offset) results = results.slice(filter.offset);
     if (filter.limit) results = results.slice(0, filter.limit);
     
     return results;
+  }
+  
+  /** Escape a field name for use in json_extract path */
+  private escapeJsonPath(field: string): string {
+    // Prevent SQL injection in JSON path: only allow alphanumeric, dots, underscores
+    return field.replace(/[^a-zA-Z0-9._]/g, '');
   }
   
   async keys(collection: string): Promise<string[]> {
@@ -235,12 +334,33 @@ export class SQLiteAdapter implements StorageAdapter {
   }
   
   /**
-   * Run a batch of operations in a transaction (SQLite-specific)
+   * Run a synchronous batch of operations in a transaction.
+   * NOTE: better-sqlite3 transactions are synchronous. The callback
+   * MUST be synchronous — async work will execute outside the transaction.
    */
-  async transaction<T>(fn: () => Promise<T>): Promise<T> {
-    await this.ensureReady();
-    const tx = this.db.transaction(() => fn());
+  transactionSync<T>(fn: () => T): T {
+    const tx = this.db.transaction(fn);
     return tx();
+  }
+  
+  /**
+   * Bulk put — writes multiple key-value pairs in a single transaction.
+   * Much faster than individual put() calls for large imports.
+   */
+  async putBatch(operations: Array<{ collection: string; key: string; value: unknown }>): Promise<void> {
+    await this.ensureReady();
+    const insert = this.stmt(`
+      INSERT INTO dpth_store (collection, key, value, updated_at)
+      VALUES (?, ?, ?, unixepoch())
+      ON CONFLICT(collection, key)
+      DO UPDATE SET value = excluded.value, updated_at = unixepoch()
+    `);
+    
+    this.transactionSync(() => {
+      for (const op of operations) {
+        insert.run(op.collection, op.key, this.serialize(op.value));
+      }
+    });
   }
   
   /**

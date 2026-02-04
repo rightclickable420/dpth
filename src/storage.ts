@@ -60,6 +60,9 @@ export interface StorageAdapter {
   
   /** Close the adapter (cleanup connections, flush writes) */
   close(): Promise<void>;
+  
+  /** Optional: bulk write operations in a single batch (faster than individual puts) */
+  putBatch?(operations: Array<{ collection: string; key: string; value: unknown }>): Promise<void>;
 }
 
 /** Vector search capabilities (extends base adapter) */

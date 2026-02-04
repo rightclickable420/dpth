@@ -624,6 +624,13 @@ class CorrelationAPI {
     } else {
       metric.points.push(point);
       metric.points.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      
+      // Cap points to prevent unbounded growth (default: 10,000)
+      const MAX_POINTS = 10_000;
+      if (metric.points.length > MAX_POINTS) {
+        // Keep the most recent MAX_POINTS entries
+        metric.points = metric.points.slice(-MAX_POINTS);
+      }
     }
     
     await this.adapter.put('metrics', metricId, metric);
