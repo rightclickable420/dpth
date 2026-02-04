@@ -25,16 +25,23 @@ export interface SourceRef {
 }
 
 /** Entity types we understand */
-export type EntityType = 
-  | 'person'
-  | 'company' 
-  | 'product'
-  | 'project'
-  | 'team'
-  | 'location'
-  | 'event'
-  | 'metric'
-  | 'custom';
+/**
+ * Entity type — any string. Well-known types provided as constants.
+ * Use any domain-specific type you need: 'deal', 'ticket', 'invoice', etc.
+ */
+export type EntityType = string;
+
+/** Well-known entity types (convenience constants) */
+export const ENTITY_TYPES = {
+  person: 'person',
+  company: 'company',
+  product: 'product',
+  project: 'project',
+  team: 'team',
+  location: 'location',
+  event: 'event',
+  metric: 'metric',
+} as const;
 
 /** Core entity — a unified identity across sources */
 export interface Entity {

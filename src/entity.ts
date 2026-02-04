@@ -10,7 +10,7 @@
  * - Temporal attributes: Every attribute has history
  */
 
-import crypto from 'crypto';
+import { generateEntityId } from './util.js';
 import {
   Entity,
   EntityId,
@@ -22,13 +22,29 @@ import {
 
 // ─── Entity Store ────────────────────────────────────
 
-/** In-memory entity store (will be persisted later) */
+/**
+ * @deprecated Standalone entity functions use in-memory Maps that are
+ * disconnected from the adapter system. Use `dpth()` factory instead:
+ * 
+ *   import { dpth } from 'dpth/dpth';
+ *   const db = dpth();
+ *   await db.entity.resolve({ type: 'person', name: 'John', source: 'stripe', externalId: 'cus_123' });
+ * 
+ * These standalone functions will be removed in v1.0.
+ */
 const entities = new Map<EntityId, Entity>();
 const sourceIndex = new Map<string, EntityId>(); // "sourceId:externalId" → entityId
 
-/** Generate a unique entity ID */
-function generateEntityId(): EntityId {
-  return `ent_${crypto.randomBytes(12).toString('hex')}`;
+let _standaloneWarned = false;
+function warnStandalone(): void {
+  if (!_standaloneWarned) {
+    _standaloneWarned = true;
+    console.warn(
+      'dpth: Standalone entity functions are deprecated. Use dpth() factory instead:\n' +
+      '  const db = dpth(); await db.entity.resolve({ ... })\n' +
+      '  See: https://dpth.io'
+    );
+  }
 }
 
 /** Create index key for source lookup */
@@ -249,6 +265,7 @@ function fuzzyMatch(a: string, b: string): number {
 /**
  * Resolve or create: Find a matching entity or create a new one
  */
+/** @deprecated Use dpth().entity.resolve() instead. Will be removed in v1.0. */
 export function resolveOrCreate(
   type: EntityType,
   name: string,
@@ -261,6 +278,7 @@ export function resolveOrCreate(
     minConfidence?: number;
   }
 ): { entity: Entity; isNew: boolean; confidence: number } {
+  warnStandalone();
   // First, check if we already have this exact source reference
   const existing = findEntityBySource(sourceId, externalId);
   if (existing) {

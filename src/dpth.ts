@@ -26,10 +26,10 @@
  *   await db.close();
  */
 
-import crypto from 'crypto';
 import type { StorageAdapter, VectorAdapter, VectorResult } from './storage.js';
 import { MemoryAdapter } from './storage.js';
 import { ValidationError, EntityNotFoundError, AdapterCapabilityError } from './errors.js';
+import { generateEntityId, generateSnapshotId, randomHex } from './util.js';
 import type {
   Entity,
   EntityId,
@@ -295,7 +295,7 @@ class EntityAPI {
     }
     
     // Create new entity
-    const id = `ent_${crypto.randomBytes(12).toString('hex')}`;
+    const id = generateEntityId();
     const now = new Date();
     const entityAttrs: Record<string, TemporalValue<unknown>> = {};
     
@@ -505,7 +505,7 @@ class TemporalAPI {
     source: SourceId = 'local'
   ): Promise<SnapshotRecord<T>> {
     const record: SnapshotRecord<T> = {
-      id: `snap_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      id: generateSnapshotId(),
       key,
       timestamp: new Date(),
       data,

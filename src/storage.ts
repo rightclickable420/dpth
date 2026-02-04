@@ -189,17 +189,10 @@ export class MemoryAdapter implements StorageAdapter {
 let globalAdapter: StorageAdapter = new MemoryAdapter();
 
 /**
- * Configure dpth with a storage adapter.
- * Call before using any dpth modules.
- * 
- * @example
- * import { configure, MemoryAdapter } from 'dpth/storage';
- * configure({ adapter: new MemoryAdapter() }); // default
- * 
- * @example
- * import { configure } from 'dpth/storage';
- * import { SQLiteAdapter } from 'dpth/adapter-sqlite';
- * configure({ adapter: new SQLiteAdapter('./data.db') });
+ * @deprecated Use dpth() factory instead:
+ *   const db = dpth('./data.db'); // SQLite
+ *   const db = dpth(); // in-memory
+ * Global configure() will be removed in v1.0.
  */
 export function configure(options: { adapter: StorageAdapter }): void {
   globalAdapter = options.adapter;
