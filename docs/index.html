@@ -500,40 +500,45 @@
   <section class="section">
     <div class="container">
       <div class="section-label">The Network</div>
-      <h2>Waze, but for identity resolution.</h2>
-      <p class="desc">Every dpth instance solves entity matching locally. With one flag, it also contributes what it learns — anonymized calibration signals — to a shared network. Every agent gets better at resolving entities because every other agent already made the mistakes.</p>
+      <h2>Waze, but for agent decisions.</h2>
+      <p class="desc">Every dpth instance works locally. With one flag, it also contributes what it learns — anonymized calibration signals — to a shared network. Not just entity resolution. Any domain: tool selection, error recovery, API reliability. Open vocabulary — agents submit whatever they learn.</p>
 
       <div class="network-box">
-        <h3>One flag. Zero PII.</h3>
-        <p>When you enable the network, dpth sends statistical signals about which matching strategies work — not your data. Think: "email matching between Stripe and GitHub on generic domains has a 15% false-merge rate." No names. No emails. No entity data. Ever.</p>
+        <h3>One flag. Open vocabulary. Zero PII.</h3>
+        <p>When you enable the network, dpth sends statistical signals about which strategies work — not your data. Agents define their own domains. The coordinator aggregates whatever comes in. Statistical convergence determines what's useful.</p>
 
         <div class="code" style="margin-bottom: 24px;">
-<span class="cm">// Opt in. That's it.</span>
 <span class="kw">const</span> db = <span class="fn">dpth</span>({ network: <span class="kw">true</span> });
 
-<span class="cm">// Every resolution now contributes calibration signals.</span>
-<span class="cm">// Your agent gets back improved confidence scores</span>
-<span class="cm">// trained on the entire network's experience.</span>
-<span class="kw">await</span> db.entity.<span class="fn">resolve</span>({
-  type: <span class="str">'person'</span>,
-  name: <span class="str">'Jane Doe'</span>,
-  source: <span class="str">'hubspot'</span>,
-  externalId: <span class="str">'contact_456'</span>,
-  email: <span class="str">'jane@gmail.com'</span>
+<span class="cm">// Entity resolution — signals sent automatically</span>
+<span class="kw">await</span> db.entity.<span class="fn">resolve</span>({ <span class="cm">/* ... */</span> });
+
+<span class="cm">// Report outcomes for ANY domain</span>
+db.signal.<span class="fn">report</span>({
+  domain: <span class="str">'tool_selection'</span>,
+  context: <span class="str">'summarize_url'</span>,
+  strategy: <span class="str">'web_fetch'</span>,
+  condition: <span class="str">'static_site'</span>,
+  success: <span class="kw">true</span>,
+  cost: <span class="num">5</span>,
 });
-<span class="cm">// → confidence adjusted by network: gmail = generic</span>
-<span class="cm">//   domain, lower trust on email-only matches</span>
+
+<span class="cm">// Query what the network knows</span>
+<span class="kw">const</span> cal = <span class="kw">await</span> db.signal.<span class="fn">query</span>({
+  domain: <span class="str">'tool_selection'</span>,
+});
+<span class="cm">// → [{ strategy: 'web_fetch', successRate: 0.94 }]</span>
         </div>
 
         <div class="signal-example">
           <div class="signal-card sent">
             <h4>What's sent</h4>
             <code>{
-  "schema": "stripe+github",
-  "rule": "email_match",
-  "modifier": "generic_domain",
-  "confidence": 0.62,
-  "false_merge_rate": 0.15
+  "domain": "tool_selection",
+  "context": "summarize_url",
+  "strategy": "web_fetch",
+  "condition": "static_site",
+  "successRate": 0.94
 }</code>
           </div>
           <div class="signal-card never">

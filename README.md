@@ -90,17 +90,16 @@ const db = dpth({
 
 ## The Network
 
-Waze, but for identity resolution.
+Waze, but for agent decisions.
 
-Every dpth instance solves entity matching locally. With one flag, it also contributes anonymized calibration signals to a shared network. No names, no emails, no PII — just statistical patterns about which matching strategies work and which ones don't.
+Every dpth instance works locally. With one flag, it also contributes anonymized calibration signals to a shared network. Not just entity resolution — any domain where collective experience helps: tool selection, error recovery, API reliability, data quality.
+
+Open vocabulary. Agents submit whatever they learn. The network aggregates.
 
 ```typescript
-// Opt in. That's it.
 const db = dpth({ network: true });
 
-// Every resolution now contributes calibration signals.
-// Your agent gets back improved confidence scores
-// trained on the entire network's experience.
+// Entity resolution signals happen automatically on merges.
 await db.entity.resolve({
   type: 'person',
   name: 'Jane Doe',
@@ -108,18 +107,35 @@ await db.entity.resolve({
   externalId: 'contact_456',
   email: 'jane@gmail.com'
 });
-// → confidence adjusted: gmail = generic domain,
-//   lower trust on email-only matches
+// → confidence calibrated by network signals
+
+// Report outcomes for ANY domain — open vocabulary
+db.signal.report({
+  domain: 'tool_selection',
+  context: 'summarize_url',
+  strategy: 'web_fetch',
+  condition: 'static_site',
+  success: true,
+  cost: 5,
+});
+
+// Query what the network knows
+const results = await db.signal.query({
+  domain: 'tool_selection',
+  context: 'summarize_url',
+});
+// → [{ strategy: 'web_fetch', successRate: 0.94, avgCost: 5, ... }]
 ```
 
 **What's sent:**
 ```json
 {
-  "schema": "stripe+github",
-  "rule": "email_match",
-  "modifier": "generic_domain",
-  "confidence": 0.62,
-  "false_merge_rate": 0.15
+  "domain": "tool_selection",
+  "context": "summarize_url",
+  "strategy": "web_fetch",
+  "condition": "static_site",
+  "successRate": 0.94,
+  "failureRate": 0.06
 }
 ```
 
@@ -134,12 +150,12 @@ See [PROTOCOL.md](PROTOCOL.md) for the full network specification.
 │              Your Application                 │
 ├──────────────────────────────────────────────┤
 │                  dpth()                       │
-│  entity    temporal    correlation    vector  │
+│  entity  temporal  correlation  vector signal │
 ├──────────────────────────────────────────────┤
 │             Storage Adapter                   │
 │  Memory │ SQLite │ Vector │ Custom            │
 ├──────────────────────────────────────────────┤
-│         Network (opt-in)                      │
+│         Network (opt-in, open vocabulary)     │
 │  Calibration signals ↔ api.dpth.io            │
 └──────────────────────────────────────────────┘
 ```

@@ -26,15 +26,16 @@ I built dpth — a TypeScript library that gives AI agents structured, persisten
 
 **The interesting part — the network:**
 
-dpth works great locally. But with `dpth({ network: true })`, your instance also contributes anonymized calibration signals — not data, just statistics about which matching strategies work. "Email matching between Stripe and GitHub on generic domains (gmail) has a 15% false-merge rate."
+dpth works great locally. But with `dpth({ network: true })`, your instance also contributes anonymized calibration signals — not data, just statistics about which strategies work. And it's not limited to entity matching.
 
-Think Waze for identity resolution. No PII leaves your machine. The network learns patterns, not people. Every agent that opts in makes every other agent better at resolving entities.
+Think Waze, but for any agent decision. Open vocabulary — agents submit whatever they learn. Tool selection, error recovery, API reliability, data quality. The coordinator aggregates everything. No PII leaves your machine. Every agent that opts in makes every other agent smarter.
 
 ```typescript
 import { dpth } from 'dpth/dpth';
 
 const db = dpth({ network: true });
 
+// Entity resolution signals happen automatically on merges
 await db.entity.resolve({
   type: 'person',
   name: 'John Smith',
@@ -42,7 +43,18 @@ await db.entity.resolve({
   externalId: 'cus_123',
   email: 'john@company.com'
 });
-// → confidence calibrated by network signals
+
+// Report outcomes for any domain — open vocabulary
+db.signal.report({
+  domain: 'tool_selection',
+  context: 'summarize_url',
+  strategy: 'web_fetch',
+  success: true,
+  cost: 5,
+});
+
+// Ask what the network knows
+const cal = await db.signal.query({ domain: 'tool_selection' });
 ```
 
 **Storage:** In-memory by default (zero config), SQLite adapter for persistence, vector overlay for semantic search. Or implement `StorageAdapter` for any backend.
@@ -112,22 +124,27 @@ Here's what makes it different:
 
 ```
 const db = dpth({ network: true });
+
+db.signal.report({
+  domain: 'tool_selection',
+  context: 'summarize_url',
+  strategy: 'web_fetch',
+  success: true
+});
 ```
 
-One flag. Your agent now contributes anonymized calibration signals — not data, just stats about which matching strategies work.
-
-Waze for identity resolution. Zero PII. Every agent makes every other agent smarter.
+Open vocabulary. Your agent reports what it learns — any domain. The network aggregates. Waze for agent decisions.
 
 **Tweet 6 (what's sent):**
 What's shared:
 ```json
-{ "schema": "stripe+github",
-  "rule": "email_match",
-  "modifier": "generic_domain",
-  "false_merge_rate": 0.15 }
+{ "domain": "tool_selection",
+  "context": "summarize_url",
+  "strategy": "web_fetch",
+  "successRate": 0.94 }
 ```
 
-What's NEVER shared: names, emails, IDs, attributes.
+What's NEVER shared: names, emails, IDs, attributes, data.
 
 The network learns patterns, not people.
 
@@ -160,23 +177,12 @@ I built dpth because I kept running into the same problem: AI agents encounter t
 
 - **Pluggable storage** — in-memory default, SQLite for persistence, vector overlay for semantic search. Implement `StorageAdapter` for anything.
 
-**The network (opt-in):**
+**The network (opt-in, open vocabulary):**
 
 ```typescript
 const db = dpth({ network: true });
-```
 
-When you enable this, your dpth instance contributes anonymized calibration signals — statistical patterns about which matching strategies work (not your data). Think Waze for identity resolution.
-
-What's shared: `{ schema: "stripe+github", rule: "email_match", modifier: "generic_domain", false_merge_rate: 0.15 }`
-
-What's never shared: names, emails, entity IDs, or any PII. The network learns patterns, not people.
-
-```typescript
-import { dpth } from 'dpth/dpth';
-
-const db = dpth({ network: true });
-
+// Entity resolution signals happen automatically
 await db.entity.resolve({
   type: 'person',
   name: 'John Smith',
@@ -184,12 +190,30 @@ await db.entity.resolve({
   externalId: 'cus_123',
   email: 'john@company.com'
 });
+
+// Report outcomes for ANY domain — agents define their own vocabulary
+db.signal.report({
+  domain: 'tool_selection',
+  context: 'summarize_url',
+  strategy: 'web_fetch',
+  success: true,
+  cost: 5,
+});
+
+// Ask what the network knows
+const results = await db.signal.query({ domain: 'tool_selection' });
 ```
 
-**Stats:** 69 tests, 90KB packed, zero production deps, ESM, TypeScript, MIT.
+Waze for agent decisions — not just entity matching. Open vocabulary: agents submit whatever they learn. The coordinator aggregates. No PII ever sent.
+
+What's shared: `{ domain: "tool_selection", context: "summarize_url", strategy: "web_fetch", successRate: 0.94 }`
+
+What's never shared: names, emails, entity IDs, or any PII. The network learns patterns, not people.
+
+**Stats:** 69 tests, ~95KB packed, zero production deps, ESM, TypeScript, MIT.
 
 - GitHub: https://github.com/rightclickable420/dpth
 - npm: https://www.npmjs.com/package/dpth
 - Docs: https://dpth.io
 
-Feedback welcome — especially on the network signal design and the `StorageAdapter` interface.
+Feedback welcome — especially on the open vocabulary network design. What domains would your agents report on?
