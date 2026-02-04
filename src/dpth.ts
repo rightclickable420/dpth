@@ -290,6 +290,7 @@ class EntityAPI {
       entity.updatedAt = new Date();
       await this.adapter.put('entities', entity.id, entity);
       await this.adapter.put('source_index', sKey, entity.id);
+      await this.updateEmailIndex(entity);
       
       return { entity, isNew: false, confidence: match.score };
     }
@@ -328,6 +329,7 @@ class EntityAPI {
     
     await this.adapter.put('entities', id, entity);
     await this.adapter.put('source_index', sKey, id);
+    await this.updateEmailIndex(entity);
     
     return { entity, isNew: true, confidence: 1.0 };
   }
@@ -374,6 +376,10 @@ class EntityAPI {
     
     entity.updatedAt = now;
     await this.adapter.put('entities', entityId, entity);
+    // Update email index if email attribute changed
+    if (key === 'email') {
+      await this.updateEmailIndex(entity);
+    }
     return entity;
   }
   
@@ -424,6 +430,14 @@ class EntityAPI {
     return all.length;
   }
   
+  /** Update the email index for an entity */
+  private async updateEmailIndex(entity: Entity): Promise<void> {
+    const email = entity.attributes['email']?.current as string | undefined;
+    if (email) {
+      await this.adapter.put('email_index', email.toLowerCase(), entity.id);
+    }
+  }
+  
   // ── Private matching ──
   
   private async findBestMatch(
@@ -432,16 +446,66 @@ class EntityAPI {
     email?: string,
     aliases?: string[]
   ): Promise<{ entity: Entity; score: number } | null> {
+    // ── Fast path: email index lookup (O(1) instead of O(n)) ──
+    if (email) {
+      const emailKey = email.toLowerCase();
+      const entityId = await this.adapter.get('email_index', emailKey) as string | undefined;
+      if (entityId) {
+        const entity = await this.adapter.get('entities', entityId) as Entity | undefined;
+        if (entity && entity.type === type) {
+          return { entity, score: 0.9 + (entity.name.toLowerCase() === name.toLowerCase() ? 0.1 : 0) };
+        }
+      }
+    }
+    
+    // ── Blocking: narrow candidates before fuzzy matching ──
+    // Instead of scanning ALL entities, use name-based blocking
     const candidates = await this.adapter.query({
       collection: 'entities',
       where: { type },
     }) as Entity[];
     
+    // For small sets (<500), just scan all — Levenshtein is fast enough
+    // For larger sets, use first-letter + length blocking to narrow
+    let narrowed: Entity[];
+    if (candidates.length < 500) {
+      narrowed = candidates;
+    } else {
+      const nameLower = name.toLowerCase();
+      const nameLen = nameLower.length;
+      narrowed = candidates.filter(e => {
+        const eName = e.name.toLowerCase();
+        // Block 1: first letter match OR alias match
+        if (eName[0] !== nameLower[0] && 
+            !e.aliases.some(a => a.toLowerCase()[0] === nameLower[0])) {
+          return false;
+        }
+        // Block 2: length within 50% (no point fuzzy-matching "Al" against "Alexander Hamilton")
+        if (Math.abs(eName.length - nameLen) > nameLen * 0.5) {
+          return false;
+        }
+        return true;
+      });
+      
+      // Also include any entities that share email domain if we have email
+      if (email) {
+        const domain = email.split('@')[1]?.toLowerCase();
+        if (domain) {
+          for (const entity of candidates) {
+            const eEmail = entity.attributes['email']?.current as string | undefined;
+            if (eEmail?.toLowerCase().endsWith(`@${domain}`) && !narrowed.includes(entity)) {
+              narrowed.push(entity);
+            }
+          }
+        }
+      }
+    }
+    
     let best: { entity: Entity; score: number } | null = null;
     const searchTerms = [name.toLowerCase(), ...(aliases || []).map(a => a.toLowerCase())];
     if (email) searchTerms.push(email.toLowerCase());
     
-    for (const entity of candidates) {
+    for (const entity of narrowed) {
       let score = 0;
       
       // Name matching

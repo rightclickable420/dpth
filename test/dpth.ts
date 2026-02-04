@@ -147,6 +147,24 @@ async function testObjectResolve() {
   });
   assert(ticket.type === 'ticket', 'object resolve supports custom entity types');
   
+  // Email index fast-path: merge by email even with different name
+  const { entity: eve1 } = await db.entity.resolve({
+    type: 'person',
+    name: 'Eve Wilson',
+    source: 'stripe',
+    externalId: 'cus_eve',
+    email: 'eve@example.com',
+  });
+  const { entity: eve2, isNew: eveNew } = await db.entity.resolve({
+    type: 'person',
+    name: 'E. Wilson',
+    source: 'github',
+    externalId: 'ewilson',
+    email: 'eve@example.com',
+  });
+  assert(eveNew === false, 'email index enables merge with different name');
+  assert(eve2.id === eve1.id, 'email index merges to same entity');
+  
   await db.close();
 }
 
