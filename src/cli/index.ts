@@ -130,7 +130,7 @@ function getVersion(): string {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
     return `dpth v${pkg.version}`;
   } catch {
-    return 'dpth v0.6.4';
+    return 'dpth v0.6.6';
   }
 }
 

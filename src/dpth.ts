@@ -61,6 +61,14 @@ export interface DpthOptions {
   network?: boolean;
   /** Custom coordinator URL (default: https://api.dpth.io) */
   coordinatorUrl?: string;
+  /** 
+   * Path to write-ahead log for durable signal delivery.
+   * Signals are persisted here before network send and only removed after confirmation.
+   * Unconfirmed signals are replayed on restart.
+   * 
+   * Default: undefined (no WAL, signals may be lost on crash/network failure)
+   */
+  walPath?: string;
 }
 
 /** Object-style options for entity.resolve() */
@@ -134,7 +142,7 @@ export class Dpth {
     this.adapter = options.adapter || new MemoryAdapter();
     
     if (options.network) {
-      this._network = new NetworkLayer(options.coordinatorUrl);
+      this._network = new NetworkLayer(options.coordinatorUrl, options.walPath);
     }
     
     this.entity = new EntityAPI(this.adapter, this._network);
@@ -171,6 +179,11 @@ export class Dpth {
         console.warn('dpth: network registration failed, continuing in local-only mode');
         this._network = null;
       });
+      
+      // Replay any unconfirmed signals from WAL
+      if (this._network) {
+        await this._network.initWal();
+      }
     }
   }
   
@@ -1082,9 +1095,24 @@ const FLUSH_THRESHOLD = 50; // Flush after this many resolutions
  * 
  * Open vocabulary — agents can submit signals for any domain, not just identity.
  */
+interface SignalRecord {
+  id: string;
+  domain: string;
+  context: string;
+  strategy: string;
+  condition: string;
+  successes: number;
+  failures: number;
+  totalAttempts: number;
+  cost: number;
+  createdAt: string;
+  confirmed?: boolean;
+}
+
 class NetworkLayer {
   private coordinatorUrl: string;
   private agentId: string | null = null;
+  private walPath: string | null = null;
   
   /** 
    * Local accumulator: domain:context:strategy → { successes, failures, total, cost }
@@ -1103,8 +1131,128 @@ class NetworkLayer {
   
   private signalCount = 0;
   
-  constructor(coordinatorUrl?: string) {
+  constructor(coordinatorUrl?: string, walPath?: string) {
     this.coordinatorUrl = coordinatorUrl || DEFAULT_COORDINATOR;
+    this.walPath = walPath || null;
+  }
+  
+  /** Initialize WAL - replay any unconfirmed signals */
+  async initWal(): Promise<void> {
+    if (!this.walPath) return;
+    
+    try {
+      const { readFileSync, existsSync } = await import('fs');
+      if (!existsSync(this.walPath)) return;
+      
+      const content = readFileSync(this.walPath, 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      
+      for (const line of lines) {
+        try {
+          const record: SignalRecord = JSON.parse(line);
+          if (record.confirmed) continue; // Skip confirmed
+          
+          // Replay into accumulator
+          const key = `${record.domain}:${record.context}:${record.strategy}:${record.condition}`;
+          const existing = this.signals.get(key);
+          
+          if (existing) {
+            existing.successes += record.successes;
+            existing.failures += record.failures;
+            existing.totalAttempts += record.totalAttempts;
+            existing.cost += record.cost;
+          } else {
+            this.signals.set(key, {
+              domain: record.domain,
+              context: record.context,
+              strategy: record.strategy,
+              condition: record.condition,
+              successes: record.successes,
+              failures: record.failures,
+              totalAttempts: record.totalAttempts,
+              cost: record.cost,
+            });
+          }
+          this.signalCount += record.totalAttempts;
+        } catch {
+          // Skip malformed lines
+        }
+      }
+      
+      // Compact WAL - remove confirmed entries
+      await this.compactWal();
+    } catch {
+      // WAL not available (browser, permissions, etc.) - continue without
+    }
+  }
+  
+  /** Append signal to WAL before network send */
+  private async appendWal(signal: SignalRecord): Promise<void> {
+    if (!this.walPath) return;
+    
+    try {
+      const { appendFileSync } = await import('fs');
+      appendFileSync(this.walPath, JSON.stringify(signal) + '\n');
+    } catch {
+      // WAL write failed - continue anyway (best effort)
+    }
+  }
+  
+  /** Mark signals as confirmed in WAL */
+  private async confirmWal(ids: string[]): Promise<void> {
+    if (!this.walPath || ids.length === 0) return;
+    
+    try {
+      const { readFileSync, writeFileSync, existsSync } = await import('fs');
+      if (!existsSync(this.walPath)) return;
+      
+      const content = readFileSync(this.walPath, 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      const idSet = new Set(ids);
+      
+      const updated = lines.map(line => {
+        try {
+          const record: SignalRecord = JSON.parse(line);
+          if (idSet.has(record.id)) {
+            record.confirmed = true;
+            return JSON.stringify(record);
+          }
+          return line;
+        } catch {
+          return line;
+        }
+      });
+      
+      writeFileSync(this.walPath, updated.join('\n') + '\n');
+    } catch {
+      // Confirm failed - will be retried on next flush
+    }
+  }
+  
+  /** Remove confirmed entries from WAL */
+  private async compactWal(): Promise<void> {
+    if (!this.walPath) return;
+    
+    try {
+      const { readFileSync, writeFileSync, existsSync } = await import('fs');
+      if (!existsSync(this.walPath)) return;
+      
+      const content = readFileSync(this.walPath, 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      
+      const unconfirmed = lines.filter(line => {
+        try {
+          const record: SignalRecord = JSON.parse(line);
+          return !record.confirmed;
+        } catch {
+          return false; // Remove malformed
+        }
+      });
+      
+      writeFileSync(this.walPath, unconfirmed.length > 0 ? unconfirmed.join('\n') + '\n' : '');
+    } catch {
+      // Compact failed - not critical
+    }
   }
   
   /** Register this dpth instance as an agent on the network */
@@ -1167,17 +1315,47 @@ class NetworkLayer {
   /**
    * Flush accumulated signals to the network.
    * Called automatically every FLUSH_THRESHOLD signals, and on close().
+   * 
+   * With WAL enabled:
+   * 1. Write to WAL first (durable)
+   * 2. Send to network
+   * 3. Mark confirmed in WAL on success
+   * 4. Compact WAL periodically
    */
   async flush(): Promise<void> {
     if (!this.agentId || this.signals.size === 0) return;
     
-    const promises: Promise<void>[] = [];
+    const toSend: Array<{ id: string; signal: SignalRecord }> = [];
     
+    // Prepare signals with IDs for tracking
     for (const signal of this.signals.values()) {
       if (signal.totalAttempts < 1) continue;
       
-      promises.push(
-        fetch(`${this.coordinatorUrl}/signals`, {
+      const id = randomHex(8);
+      const record: SignalRecord = {
+        id,
+        domain: signal.domain,
+        context: signal.context,
+        strategy: signal.strategy,
+        condition: signal.condition,
+        successes: signal.successes,
+        failures: signal.failures,
+        totalAttempts: signal.totalAttempts,
+        cost: signal.cost,
+        createdAt: new Date().toISOString(),
+      };
+      
+      // Write to WAL first (durable)
+      await this.appendWal(record);
+      toSend.push({ id, signal: record });
+    }
+    
+    // Send to network and track confirmations
+    const confirmed: string[] = [];
+    
+    const promises = toSend.map(async ({ id, signal }) => {
+      try {
+        const res = await fetch(`${this.coordinatorUrl}/signals`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1191,14 +1369,29 @@ class NetworkLayer {
             totalAttempts: signal.totalAttempts,
             cost: signal.cost,
           }),
-        }).then(() => {}).catch(() => {})
-      );
-    }
+        });
+        
+        if (res.ok) {
+          confirmed.push(id);
+        }
+      } catch {
+        // Network failed - will be replayed from WAL on next run
+      }
+    });
     
     await Promise.all(promises);
     
+    // Mark confirmed in WAL
+    await this.confirmWal(confirmed);
+    
+    // Clear in-memory accumulator
     this.signals.clear();
     this.signalCount = 0;
+    
+    // Compact WAL periodically (remove confirmed entries)
+    if (Math.random() < 0.1) { // 10% chance per flush
+      await this.compactWal();
+    }
   }
   
   /**
