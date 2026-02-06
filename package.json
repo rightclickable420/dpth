@@ -1,10 +1,13 @@
 {
   "name": "dpth",
-  "version": "0.4.0",
-  "description": "Entity resolution, temporal history, and correlation detection for TypeScript. Zero dependencies.",
+  "version": "0.5.0",
+  "description": "Collective intelligence for AI agents. Entity resolution, temporal history, correlation detection, and network signals.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "dpth": "./bin/dpth.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -49,6 +52,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "README.md",
     "LICENSE"
   ],
