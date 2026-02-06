@@ -15,6 +15,7 @@ import { log } from './log.js';
 import { watch } from './watch.js';
 import { serve } from './serve.js';
 import { status } from './status.js';
+import { harvest } from './harvest.js';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -54,6 +55,11 @@ async function main() {
         await status();
         break;
         
+      case 'harvest':
+      case 'h':
+        await harvest(args.slice(1));
+        break;
+        
       case 'help':
       case '--help':
       case '-h':
@@ -89,6 +95,7 @@ COMMANDS
   dpth query [domain] [context]     Query what the network knows
   dpth log <domain> <ctx> <strat>   Log a signal (outcome: success/failure)
   dpth watch -- <command>           Watch command, auto-log outcomes
+  dpth harvest <query> [limit]      Harvest signals from GitHub commits
   dpth serve [port]                 Run local coordinator (default: 3004)
   dpth status                       Show network status
 
@@ -96,7 +103,8 @@ EXAMPLES
   dpth query api stripe             What works for Stripe API?
   dpth log api stripe retry success Record a successful retry
   dpth watch -- claude-code "fix"   Watch Claude Code session
-  dpth serve 8080                   Run coordinator on port 8080
+  dpth harvest stripe 100           Harvest 100 Stripe fix commits
+  dpth harvest "rate limit" --dry-run  Preview without submitting
 
 OPTIONS
   -h, --help      Show this help
@@ -105,6 +113,7 @@ OPTIONS
 NETWORK
   Default: https://api.dpth.io (public network)
   Set DPTH_COORDINATOR to use a different endpoint.
+  Set GITHUB_TOKEN for higher GitHub API limits.
 
 Learn more: https://dpth.io
 `);
