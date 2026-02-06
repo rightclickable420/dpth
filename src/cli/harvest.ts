@@ -3,10 +3,30 @@
  * 
  * Fetches public commits with fix:/bug:/patch: prefixes
  * and parses them into dpth signals.
+ * 
+ * Features:
+ * - SHA deduplication (never process same commit twice)
+ * - Incremental harvests (only new commits since last run)
+ * - Signal aggregation (batch before submitting)
+ * - Quality filtering (confidence threshold)
  */
+
+import {
+  loadCache,
+  saveCache,
+  isProcessed,
+  markProcessed,
+  addPendingSignal,
+  getPendingSignals,
+  clearPendingSignals,
+  updateStats,
+  setLastHarvest,
+  getCacheStats,
+} from './harvest-cache.js';
 
 const GITHUB_API = 'https://api.github.com';
 const COORDINATOR = process.env.DPTH_COORDINATOR || 'https://api.dpth.io';
+const MIN_CONFIDENCE = 0.5;
 
 interface GitHubCommit {
   sha: string;
@@ -82,96 +102,153 @@ const CONTEXT_PATTERNS: Record<string, RegExp> = {
 };
 
 export async function harvest(args: string[]): Promise<void> {
-  const query = args[0];
-  const limit = parseInt(args[1]) || 20;
+  const query = args.filter(a => !a.startsWith('--'))[0];
+  const limitArg = args.filter(a => !a.startsWith('--'))[1];
+  const limit = parseInt(limitArg) || 50;
   const dryRun = args.includes('--dry-run');
   const verbose = args.includes('--verbose') || args.includes('-v');
+  const flush = args.includes('--flush'); // Submit all pending signals
+  const stats = args.includes('--stats'); // Show cache stats
+  
+  // Load cache
+  await loadCache();
+  
+  // Stats mode
+  if (stats) {
+    const s = getCacheStats();
+    console.log('📊 Harvest cache stats:');
+    console.log(`   Commits processed: ${s.totalProcessed.toLocaleString()}`);
+    console.log(`   Signals submitted: ${s.totalSubmitted.toLocaleString()}`);
+    console.log(`   Cached SHAs: ${s.processedCount.toLocaleString()}`);
+    console.log(`   Pending signals: ${s.pendingCount}`);
+    console.log(`   Last run: ${s.lastRun || 'never'}`);
+    return;
+  }
+  
+  // Flush mode - submit all pending signals
+  if (flush) {
+    const pending = getPendingSignals();
+    if (pending.length === 0) {
+      console.log('No pending signals to flush.');
+      return;
+    }
+    
+    console.log(`📤 Flushing ${pending.length} pending signals...`);
+    let submitted = 0;
+    for (const { domain, context, strategy, count } of pending) {
+      if (verbose) {
+        console.log(`   ${count}x ${domain}/${context}/${strategy}`);
+      }
+      const success = await submitSignal(domain, context, strategy, count);
+      if (success) submitted++;
+    }
+    
+    clearPendingSignals();
+    updateStats(0, submitted);
+    await saveCache(await loadCache());
+    
+    console.log(`✓ Submitted ${submitted} signals to network`);
+    return;
+  }
   
   if (!query) {
-    console.log('Usage: dpth harvest <query> [limit] [--dry-run] [--verbose]');
+    console.log('Usage: dpth harvest <query> [limit] [options]');
+    console.log('');
+    console.log('Options:');
+    console.log('  --dry-run     Preview without submitting or caching');
+    console.log('  --verbose     Show each parsed signal');
+    console.log('  --flush       Submit all pending signals');
+    console.log('  --stats       Show harvest cache statistics');
     console.log('');
     console.log('Examples:');
-    console.log('  dpth harvest stripe 50           Harvest fix commits mentioning stripe');
-    console.log('  dpth harvest "rate limit" 100    Harvest rate limit fixes');
-    console.log('  dpth harvest react --dry-run     Preview without submitting');
+    console.log('  dpth harvest stripe 100          Harvest Stripe fix commits');
+    console.log('  dpth harvest "rate limit" 200    Harvest rate limit fixes');
+    console.log('  dpth harvest retry --dry-run     Preview retry patterns');
+    console.log('  dpth harvest --flush             Submit all pending signals');
+    console.log('  dpth harvest --stats             Show cache statistics');
     console.log('');
-    console.log('The query searches GitHub commit messages with "fix" prefix.');
+    console.log('Signals are aggregated and cached. Use --flush to submit.');
+    console.log('Set GITHUB_TOKEN for higher API rate limits.');
     return;
   }
   
   console.log(`🌾 Harvesting signals from GitHub...`);
   console.log(`   Query: fix + "${query}"`);
   console.log(`   Limit: ${limit} commits`);
-  console.log('');
   
   try {
     // Search GitHub for commits
-    const commits = await searchCommits(query, limit);
-    console.log(`   Found ${commits.length} commits`);
+    const allCommits = await searchCommits(query, limit);
+    
+    // Filter out already-processed commits
+    const newCommits = allCommits.filter(c => !isProcessed(c.sha));
+    const skipped = allCommits.length - newCommits.length;
+    
+    console.log(`   Found: ${allCommits.length} commits (${skipped} already processed)`);
+    console.log(`   New: ${newCommits.length} commits to process`);
     console.log('');
     
-    if (commits.length === 0) {
-      console.log('No commits found. Try a different query.');
+    if (newCommits.length === 0) {
+      console.log('No new commits to process. Try a different query or higher limit.');
       return;
     }
     
     // Parse into signals
-    const signals: ParsedSignal[] = [];
-    for (const commit of commits) {
-      const parsed = parseCommitMessage(commit.commit.message);
-      if (parsed && parsed.confidence >= 0.5) {
-        signals.push(parsed);
-        if (verbose) {
-          console.log(`   📝 ${parsed.domain}/${parsed.context}/${parsed.strategy}`);
-          console.log(`      "${parsed.raw.slice(0, 60)}..."`);
+    let parsed = 0;
+    let lowConfidence = 0;
+    
+    for (const commit of newCommits) {
+      const signal = parseCommitMessage(commit.commit.message);
+      
+      if (signal) {
+        if (signal.confidence >= MIN_CONFIDENCE) {
+          parsed++;
+          addPendingSignal(signal.domain, signal.context, signal.strategy);
+          
+          if (verbose) {
+            console.log(`   📝 ${signal.domain}/${signal.context}/${signal.strategy}`);
+            console.log(`      "${signal.raw.slice(0, 60)}${signal.raw.length > 60 ? '...' : ''}"`);
+          }
+        } else {
+          lowConfidence++;
         }
+      }
+      
+      // Mark as processed (unless dry run)
+      if (!dryRun) {
+        markProcessed(commit.sha);
       }
     }
     
-    console.log(`   Parsed ${signals.length} valid signals (${Math.round(signals.length/commits.length*100)}% hit rate)`);
+    const hitRate = Math.round(parsed / newCommits.length * 100);
+    console.log(`   Parsed: ${parsed} signals (${hitRate}% hit rate, ${lowConfidence} low-confidence skipped)`);
+    
+    // Show aggregated pending signals
+    const pending = getPendingSignals();
+    const sorted = pending.sort((a, b) => b.count - a.count);
+    
+    console.log(`   Pending: ${pending.length} unique patterns`);
     console.log('');
     
-    if (signals.length === 0) {
-      console.log('No parseable signals found. Commits may be too vague.');
-      return;
+    if (sorted.length > 0) {
+      console.log('   Top patterns (pending):');
+      for (const { domain, context, strategy, count } of sorted.slice(0, 10)) {
+        console.log(`      ${count}x ${domain}/${context}/${strategy}`);
+      }
+      console.log('');
     }
-    
-    // Group by domain/context/strategy for aggregation
-    const grouped = new Map<string, ParsedSignal[]>();
-    for (const sig of signals) {
-      const key = `${sig.domain}|${sig.context}|${sig.strategy}`;
-      const list = grouped.get(key) || [];
-      list.push(sig);
-      grouped.set(key, list);
-    }
-    
-    console.log(`   Unique patterns: ${grouped.size}`);
-    console.log('');
-    
-    // Show top patterns
-    const sorted = [...grouped.entries()].sort((a, b) => b[1].length - a[1].length);
-    console.log('   Top patterns:');
-    for (const [key, sigs] of sorted.slice(0, 10)) {
-      const [domain, context, strategy] = key.split('|');
-      console.log(`      ${sigs.length}x ${domain}/${context}/${strategy}`);
-    }
-    console.log('');
     
     if (dryRun) {
-      console.log('   --dry-run: Not submitting to network.');
+      console.log('   --dry-run: Not saving to cache or submitting.');
       return;
     }
     
-    // Submit to network
-    console.log('   Submitting to dpth network...');
-    let submitted = 0;
-    for (const [key, sigs] of grouped) {
-      const [domain, context, strategy] = key.split('|');
-      const success = await submitSignal(domain, context, strategy, sigs.length);
-      if (success) submitted++;
-    }
+    // Update stats and save cache
+    updateStats(newCommits.length, 0);
+    setLastHarvest(query);
+    await saveCache(await loadCache());
     
-    console.log(`   ✓ Submitted ${submitted} signals to network`);
+    console.log(`   ✓ Cached ${parsed} signals. Run 'dpth harvest --flush' to submit.`);
     
   } catch (err) {
     console.error('Error:', err instanceof Error ? err.message : err);
