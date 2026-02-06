@@ -1,6 +1,6 @@
 {
   "name": "dpth",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Collective intelligence for AI agents. Entity resolution, temporal history, correlation detection, and network signals.",
   "type": "module",
   "main": "dist/index.js",
@@ -86,7 +86,7 @@
     "url": "https://github.com/rightclickable420/dpth.git"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "peerDependencies": {
     "better-sqlite3": "^12.6.2"
