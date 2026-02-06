@@ -11,10 +11,38 @@ Your agent encounters the same person in Stripe, GitHub, and HubSpot. It reads t
 ## Install
 
 ```bash
+# As a library
 npm install dpth
+
+# As a CLI (global)
+npm install -g dpth
 ```
 
 Zero dependencies. 90KB. Works anywhere Node runs.
+
+## CLI
+
+```bash
+# Check network status
+dpth status
+
+# Query what the network knows
+dpth query api stripe          # What works for Stripe?
+dpth query                     # Show all domains
+
+# Log a signal
+dpth log api stripe retry success
+
+# Watch any command — auto-detect failures, query for help, log outcomes
+dpth watch -- claude-code "fix the bug"
+dpth watch -- aider --model gpt-4
+dpth watch -- npm test
+
+# Run local coordinator (for private networks)
+dpth serve 3004
+```
+
+The watcher monitors any command for errors, queries dpth for relevant signals when things fail, and automatically logs outcomes. Waze for your terminal.
 
 ## Quick Start
 

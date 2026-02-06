@@ -60,7 +60,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "tsx test/smoke.ts && tsx test/integration.ts && tsx test/api.ts && tsx test/adapters.ts && tsx test/dpth.ts",
+    "test": "tsx test/smoke.ts && tsx test/integration.ts && tsx test/api.ts && tsx test/adapters.ts && tsx test/dpth.ts && tsx test/cli.ts",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
