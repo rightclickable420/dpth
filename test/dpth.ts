@@ -414,6 +414,109 @@ async function testNetworkOptIn() {
   }
 }
 
+// ─── Router & Unified Record API Tests ───────────────
+
+async function testRouter() {
+  console.log('\n🚦 Router & Unified Record API');
+  
+  const db = dpth();
+  
+  // Test signal shape detection
+  const signalRoute = db.detectShape({
+    context: 'stripe',
+    strategy: 'retry_60s',
+    outcome: 1,
+  });
+  assert(signalRoute?.shape === 'signal', 'detects signal shape');
+  assert(signalRoute?.pipeline === 'aggregate', 'signal uses aggregate pipeline');
+  
+  // Test entity shape detection  
+  const entityRoute = db.detectShape({
+    type: 'person',
+    name: 'John',
+    source: 'stripe',
+    externalId: 'cus_123',
+  });
+  assert(entityRoute?.shape === 'entity', 'detects entity shape');
+  assert(entityRoute?.pipeline === 'individual', 'entity uses individual pipeline');
+  
+  // Test temporal shape detection
+  const temporalRoute = db.detectShape({
+    key: 'mrr',
+    value: 50000,
+  });
+  assert(temporalRoute?.shape === 'temporal', 'detects temporal shape');
+  assert(temporalRoute?.pipeline === 'append', 'temporal uses append pipeline');
+  
+  // Test correlation shape detection
+  const corrRoute = db.detectShape({
+    metric: 'deploys',
+    value: 12,
+  });
+  assert(corrRoute?.shape === 'correlation', 'detects correlation shape');
+  assert(corrRoute?.pipeline === 'compute', 'correlation uses compute pipeline');
+  
+  // Test unknown shape returns null
+  const unknownRoute = db.detectShape({
+    foo: 'bar',
+  });
+  assert(unknownRoute === null, 'unknown shape returns null');
+  
+  // Test unified record() with signal
+  const result = await db.record({
+    context: 'github',
+    strategy: 'api_fetch',
+    outcome: 0.9,
+    cost: 50,
+  });
+  assert(result.shape === 'signal', 'record() handles signal shape');
+  
+  // Test unified record() with entity
+  const entityResult = await db.record({
+    type: 'company',
+    name: 'Acme Inc',
+    source: 'hubspot',
+    externalId: 'comp_456',
+  });
+  assert(entityResult.shape === 'entity', 'record() handles entity shape');
+  
+  // Verify entity was created
+  const entities = await db.entity.list('company');
+  assert(entities.length === 1, 'entity was stored via record()');
+  assert(entities[0].name === 'Acme Inc', 'entity has correct name');
+  
+  // Test unified record() with temporal
+  const tempResult = await db.record({
+    key: 'user_count',
+    value: 1000,
+  });
+  assert(tempResult.shape === 'temporal', 'record() handles temporal shape');
+  
+  // Verify snapshot was stored
+  const latest = await db.temporal.latest('user_count');
+  assert(latest?.data === 1000, 'temporal value was stored via record()');
+  
+  // Test unified record() with correlation
+  const corrResult = await db.record({
+    metric: 'signups',
+    value: 42,
+  });
+  assert(corrResult.shape === 'correlation', 'record() handles correlation shape');
+  
+  // Test normalization (context sorting)
+  const normalizedRoute = db.detectShape({
+    context: 'stripe+github',  // Should become github+stripe
+    strategy: 'Email Match',   // Should become email_match
+    outcome: true,             // Should become 1.0
+  });
+  const signalData = normalizedRoute?.data as any;
+  assert(signalData?.context === 'github+stripe', 'context is alphabetized');
+  assert(signalData?.strategy === 'email_match', 'strategy is normalized');
+  assert(signalData?.outcome === 1.0, 'boolean outcome becomes 1.0');
+  
+  await db.close();
+}
+
 async function main() {
   console.log('━━━ dpth.io Unified API Tests ━━━');
   
@@ -424,6 +527,7 @@ async function main() {
   await testCorrelationAPI();
   await testVectorAPI();
   await testFactory();
+  await testRouter();
   await testNetworkOptIn();
   
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━`);

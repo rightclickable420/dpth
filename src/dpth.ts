@@ -30,6 +30,7 @@ import type { StorageAdapter, VectorAdapter, VectorResult } from './storage.js';
 import { MemoryAdapter } from './storage.js';
 import { ValidationError, EntityNotFoundError, AdapterCapabilityError } from './errors.js';
 import { generateEntityId, generateSnapshotId, randomHex } from './util.js';
+import { detectShape, validateShape, type RouteResult, type SignalShape, type EntityShape, type TemporalShape, type CorrelationShape, ShapeValidationError } from './router.js';
 import type {
   Entity,
   EntityId,
@@ -177,6 +178,87 @@ export class Dpth {
   async ready(): Promise<this> {
     await this._ready;
     return this;
+  }
+
+  // ─── Unified Record API ────────────────────────────
+
+  /**
+   * Record data using shape-based routing.
+   * 
+   * dpth inspects the shape of your data and routes it to the appropriate pipeline:
+   * - Signal shape { context, strategy, outcome } → Aggregate pipeline
+   * - Entity shape { type, name, source, externalId } → Individual pipeline
+   * - Temporal shape { key, value } → Append pipeline
+   * - Correlation shape { metric, value } → Compute pipeline
+   * 
+   * @example
+   * // Signal (aggregates into buckets)
+   * db.record({ context: 'stripe', strategy: 'retry_60s', outcome: 1 });
+   * 
+   * // Entity (stores individual, merges matches)
+   * db.record({ type: 'person', name: 'John', source: 'stripe', externalId: 'cus_123' });
+   * 
+   * // Temporal (appends to history)
+   * db.record({ key: 'mrr', value: 50000 });
+   * 
+   * // Correlation (tracks for analysis)
+   * db.record({ metric: 'deploys', value: 12 });
+   */
+  async record(data: Record<string, unknown>): Promise<RouteResult> {
+    await this._ready;
+    
+    const route = validateShape(data);
+    
+    switch (route.pipeline) {
+      case 'aggregate':
+        // Route to signal pipeline
+        const signal = route.data as SignalShape;
+        this.signal.report({
+          domain: signal.domain || 'general',
+          context: signal.context,
+          strategy: signal.strategy,
+          condition: signal.condition,
+          success: signal.outcome >= 0.5,
+          cost: signal.cost,
+        });
+        break;
+        
+      case 'individual':
+        // Route to entity pipeline
+        const entity = route.data as EntityShape;
+        await this.entity.resolve({
+          type: entity.type,
+          name: entity.name,
+          source: entity.source,
+          externalId: entity.externalId,
+          email: entity.email,
+          aliases: entity.aliases,
+          attributes: entity.attributes,
+        });
+        break;
+        
+      case 'append':
+        // Route to temporal pipeline
+        const temporal = route.data as TemporalShape;
+        await this.temporal.snapshot(temporal.key, temporal.value, temporal.source);
+        break;
+        
+      case 'compute':
+        // Route to correlation pipeline
+        const corr = route.data as CorrelationShape;
+        await this.correlation.track(corr.metric, corr.value);
+        break;
+    }
+    
+    return route;
+  }
+
+  /**
+   * Detect the shape of data without recording it.
+   * Useful for validation or debugging.
+   */
+  detectShape(data: Record<string, unknown>): RouteResult | null {
+    return detectShape(data);
   }
   
   /** Close the database and flush any pending signals/writes */

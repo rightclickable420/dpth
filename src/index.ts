@@ -21,5 +21,6 @@ export * from './entity.js';
 export * from './correlation.js';
 export * from './temporal.js';
 export * from './embed.js';
+export * from './router.js';
 export { dpth, Dpth } from './dpth.js';
 export type { DpthOptions, ResolveOptions, ResolveResult, SnapshotRecord, DiffResult, CorrelationHit } from './dpth.js';
