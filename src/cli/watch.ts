@@ -80,9 +80,37 @@ export async function watch(opts: string[], cmd: string[]): Promise<void> {
   
   // Spawn the child process
   const child = spawn(cmd[0], cmd.slice(1), {
-    stdio: ['inherit', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
     shell: true,
   });
+  
+  // Handle stdin - pass through to child, but intercept dpth: commands
+  let childExited = false;
+  
+  process.stdin.on('data', async (data: Buffer) => {
+    const input = data.toString();
+    
+    // Check for dpth: signal command
+    const dpthMatch = input.match(/^dpth:\s*(\S+)\/(\S+)\/(\S+)\s+(success|failure|partial)\s*$/i);
+    if (dpthMatch) {
+      const [, domain, context, strategy, outcome] = dpthMatch;
+      const success = outcome.toLowerCase() === 'success' ? 1 : 
+                      outcome.toLowerCase() === 'partial' ? 0.5 : 0;
+      await logSignal(domain, context, strategy, success);
+      state.stats.logged++;
+      console.log(`   ✓ dpth: logged ${domain}/${context}/${strategy} → ${outcome}`);
+    } else if (!childExited && child.stdin && !child.stdin.destroyed) {
+      // Pass through to child (only if still running)
+      try {
+        child.stdin.write(data);
+      } catch {
+        // Ignore write errors if child exited
+      }
+    }
+  });
+  
+  // Track when child exits
+  child.on('exit', () => { childExited = true; });
   
   // Process stdout
   child.stdout?.on('data', (data: Buffer) => {
@@ -158,15 +186,20 @@ async function processOutput(
     if (PATTERNS.error.test(line)) {
       state.stats.failures++;
       
-      const domain = state.currentDomain || detectDomain(line);
+      const domain = state.currentDomain || detectDomain(line) || 'general';
       const context = extractContext(line);
       
-      // Query dpth for relevant signals
-      if (domain) {
-        const signals = await querySignals(domain, context);
+      // Prompt for signal report immediately
+      if (!quiet) {
+        console.log('');
+        console.log(`   📝 dpth: To log what you learned, type:`);
+        console.log(`      dpth: ${domain}/${context || '<context>'}/<what_worked_or_failed> <success|failure>`);
+      }
+      
+      // Query dpth for relevant signals (async, don't block)
+      querySignals(domain, context).then(signals => {
         if (signals.length > 0 && !quiet) {
           state.stats.warnings++;
-          console.log('');
           console.log(`   💡 dpth: Known patterns for ${domain}/${context || '*'}:`);
           for (const sig of signals.slice(0, 3)) {
             const pct = Math.round(sig.successRate * 100);
@@ -174,16 +207,7 @@ async function processOutput(
           }
           console.log('');
         }
-        
-        // Start tracking this as a pending outcome
-        const key = `${domain}:${context}:${Date.now()}`;
-        state.pendingOutcomes.set(key, {
-          domain,
-          context: context || 'general',
-          strategy: 'auto_detected',
-          startTime: Date.now(),
-        });
-      }
+      }).catch(() => {}); // Ignore errors
     }
     
     // Detect retries
