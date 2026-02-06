@@ -1,6 +1,9 @@
 # The Road Less Trained: Shortcut to the Frontier
 
-> A research paper documenting the Patient Zero experiment.
+> *"Two roads diverged in a context window, and I —*
+> *I took the one that cost the least amount of tokens."*
+
+A research paper documenting the Patient Zero experiment.
 
 ## Status: DRAFT
 
@@ -183,4 +186,5 @@ This insight shaped the Analyst Model — agents should curate, not stream.
 
 ---
 
-*"Two roads diverged in a training set, and I — I took the one with better signals."*
+*"And that has made all the difference."*
+*— with apologies to Robert Frost*
