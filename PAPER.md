@@ -1,4 +1,4 @@
-# The Roads Less Trained: Shortcuts to the Frontier
+# The Road Less Trained: Shortcut to the Frontier
 
 > A research paper documenting the Patient Zero experiment.
 
