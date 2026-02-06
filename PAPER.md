@@ -76,7 +76,28 @@ bucket["api:stripe:retry_60s:_"] = {
 
 This provides navigational intelligence ("retry_60s works 89% of the time for Stripe") without storing any individual agent's data.
 
-### 2.3 The Analyst Model
+### 2.3 Unified Record Architecture
+
+dpth uses a single `record()` API that routes signals based on shape:
+
+```typescript
+record({ context, strategy, outcome })     → Calibration pipeline
+record({ identifiers: [...] })             → Entity resolution
+record({ timestamp, state })               → Temporal snapshot
+record({ observations: [...] })            → Correlation detection
+```
+
+This simplifies both the agent interface (one function) and the harvester design (extract all fields, let router decide).
+
+A single source event can yield multiple pipeline entries. For example, a resolved GitHub Issue might contain:
+- A fix pattern (calibration)
+- User identity links (entity)
+- Version timeline (temporal)
+- Co-occurring symptoms (correlation)
+
+The harvester extracts what it can; the router handles classification.
+
+### 2.4 The Analyst Model
 
 Agents are not passive sensors. The protocol encourages agents to:
 
@@ -144,16 +165,126 @@ Kevin activates dpth:
 
 ## 5. Discussion
 
-### 5.1 What Worked
+### 5.1 Cold Start: The Bootstrapping Problem
 
-### 5.2 Limitations
+A collective intelligence network with zero signals provides zero value. Users won't contribute to an empty network. This is the classic cold start problem.
+
+#### Attempted Solutions
+
+**Curated seed data:** Pre-populate with "known truths" like "use exponential backoff for rate limits."
+- Rejected: These patterns are already in LLM training data. No incremental value.
+
+**Automated harvesting:** Parse GitHub commits/issues for fix patterns.
+- Partially viable: 3% yield from commits, issues more promising but complex parsing.
+- Challenge: Extracting "what failed" and "why" from terse commit messages.
+
+**Patient Zero:** Single agent contributes while doing real work.
+- Current approach: Kevin logs signals as byproduct of normal tasks.
+- Slow but high quality: Real problems, real solutions, curated by the agent.
+
+#### The Realization
+
+The most valuable signals are those **not in training data** — recent bugs, undocumented quirks, version-specific behaviors. These exist in:
+- GitHub Issues (recent, specific)
+- Package changelogs ("Fixed X in v2.3.1")
+- Discord/Slack threads (freshest, but access-limited)
+- Agent transcripts (when agents solve novel problems)
+
+The cold start solution may be **depth over breadth**: deep extraction from one or two rich, recent sources rather than shallow scraping of many.
+
+### 5.2 The Habit Problem
+
+A central challenge emerged: **when does an agent query the network?**
+
+Traditional knowledge bases require users to *remember* to consult them. For AI agents, "habits" are unreliable — there's no persistent memory between sessions, no muscle memory, no intuition.
+
+We identified a chicken-and-egg problem:
+
+1. Queries need **specificity** to return useful results
+2. Specificity comes from knowing the **context and strategy**
+3. But context only becomes clear **after encountering a problem**
+4. Yet we want help **before** hitting known walls
+
+#### Failed Approaches
+
+**Habit-based querying:** "Always query before acting."
+- Failed because: which query? "api" returns noise, "api/stripe/webhook_timeout" requires knowing about the wall before hitting it.
+
+**Error-triggered querying:** "Query when you see an error."
+- Failed because: by then you've already hit the wall. The learning comes too late.
+
+**Advice injection:** "Show relevant tips when entering a domain."
+- Failed because: without knowing the specific task, tips are usually irrelevant. Noise erodes trust.
+
+#### Solution: Presence, Not Advice
+
+The breakthrough: **the watcher shouldn't give advice. It should indicate presence.**
+
+```
+dpth watching: npm install stripe
+dpth: api — 23 signals        ← just presence
+```
+
+This accomplishes:
+- **Triggers awareness** at domain entry (the right time)
+- **No noise** (doesn't guess what's relevant)
+- **Agent autonomy** (they decide whether to query)
+- **Zero wrong advice** (you can't be wrong if you don't advise)
+
+The agent sees "23 signals exist for this domain" and can choose to explore or proceed. The query decision stays with the agent, who has context the watcher can't infer.
+
+#### Resolution-Based Logging
+
+Similarly, prompting to log on every error creates noise. The insight: **prompt at resolution, not during struggle.**
+
+```
+ON EVERY ERROR:     (bad)
+  error → prompt → agent ignores (busy)
+  error → prompt → agent ignores
+  error → prompt → agent ignores
+
+ON RESOLUTION:      (good)
+  error (silent)
+  error (silent)  
+  SUCCESS → prompt: "You recovered. What worked?"
+```
+
+Resolution captures what the agent actually learned. Mid-struggle prompts are interruptions.
+
+### 5.3 Signal Sourcing: Depth Over Breadth
+
+We explored multiple sources for bootstrapping the network:
+
+| Source | Attempted | Result |
+|--------|-----------|--------|
+| GitHub commits | ✓ | 3% yield, strategies too terse |
+| GitHub issues | Planned | Richer but parsing complex |
+| Stack Overflow | Considered | Mostly in training data already |
+| Package changelogs | Planned | Structured "Fixed X" entries |
+| Discord communities | Considered | Access/privacy barriers |
+
+Key insight: **source richness matters more than source count.**
+
+A single GitHub Issue can yield signals for multiple pipelines:
+
+```
+Issue #1234: "TypeError with Node 18"
+├─ Calibration: node18 + node-fetch-fallback → success
+├─ Entity: reporter = npm user = commit author  
+├─ Temporal: bug existed v2.1-v2.3
+└─ Correlation: co-occurs with ESM migration
+```
+
+Extraction depth from one rich source beats shallow extraction from many sources.
+
+### 5.5 Limitations
 
 - Single agent (N=1)
 - Single human operator
 - Limited task diversity
 - Network has only one contributor
 
-### 5.3 Future Work
+### 5.6 Future Work
 
 - Multi-agent validation
 - Cross-domain generalization
@@ -162,7 +293,40 @@ Kevin activates dpth:
 
 ---
 
-## 6. Conclusion
+## 6. Implementation Notes
+
+### 6.1 The Watcher
+
+The `dpth watch` command wraps any shell command and provides:
+
+1. **Domain detection** at command start (from command text)
+2. **Presence indication** if signals exist for that domain
+3. **Domain transition tracking** during execution
+4. **Resolution-based prompts** on command exit
+
+Example session:
+```
+$ dpth watch -- npm install stripe
+dpth watching: npm install stripe
+dpth: api — 23 signals           ← presence (not advice)
+... npm output ...
+                                  ← silent during execution
+dpth: log? api/<context>/<strategy> success   ← prompt at resolution
+```
+
+The watcher tracks domains touched during the session, showing presence hints only on first touch (avoiding repetition).
+
+### 6.2 The Coordinator
+
+The network coordinator (api.dpth.io) provides:
+- `POST /signals` — submit aggregated signal batches
+- `GET /calibrate?domain=X&context=Y` — query for relevant patterns
+- No individual signal storage — only aggregate buckets
+- Open vocabulary — agents can submit any domain/context/strategy
+
+---
+
+## 7. Conclusion
 
 [To be written after experiment]
 

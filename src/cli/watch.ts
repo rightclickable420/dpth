@@ -77,9 +77,17 @@ export async function watch(opts: string[], cmd: string[]): Promise<void> {
   };
   
   if (!quiet) {
-    console.log(`🔍 dpth watcher active`);
-    console.log(`   Running: ${cmd.join(' ')}`);
-    console.log('');
+    console.log(`dpth watching: ${cmd.join(' ')}`);
+  }
+  
+  // Track domains we've already shown hints for this session
+  const hintedDomains = new Set<string>();
+  
+  // Try to detect domain from command itself (await before spawning)
+  const cmdStr = cmd.join(' ').toLowerCase();
+  const initialDomain = detectDomainFromCommand(cmdStr);
+  if (initialDomain && !quiet) {
+    await showDomainHint(initialDomain, hintedDomains);
   }
   
   // Spawn the child process
@@ -120,14 +128,14 @@ export async function watch(opts: string[], cmd: string[]): Promise<void> {
   child.stdout?.on('data', (data: Buffer) => {
     const text = data.toString();
     process.stdout.write(text);
-    processOutput(text, state, 'stdout', verbose, quiet);
+    processOutput(text, state, 'stdout', verbose, quiet, hintedDomains);
   });
   
   // Process stderr
   child.stderr?.on('data', (data: Buffer) => {
     const text = data.toString();
     process.stderr.write(text);
-    processOutput(text, state, 'stderr', verbose, quiet);
+    processOutput(text, state, 'stderr', verbose, quiet, hintedDomains);
   });
   
   // Handle exit
@@ -138,27 +146,14 @@ export async function watch(opts: string[], cmd: string[]): Promise<void> {
       state.stats.logged++;
     }
     
-    if (!quiet) {
-      console.log('');
-      
-      // Exit-aware prompt
-      if (code === 0 && state.stats.failures === 0) {
-        console.log(`   ✓ Command succeeded.`);
-        if (state.stats.logged === 0) {
-          console.log(`   📝 Anything worth logging? dpth: <domain>/<context>/<strategy> success`);
-        }
-      } else if (code !== 0 || state.stats.failures > 0) {
-        console.log(`   ✗ Command had issues (exit ${code}, ${state.stats.failures} errors).`);
-        if (state.stats.logged === 0) {
-          const domain = state.currentDomain || 'general';
-          console.log(`   📝 What did you learn? dpth: ${domain}/<context>/<what_failed_or_worked> <outcome>`);
-        }
+    if (!quiet && state.stats.logged === 0) {
+      const domain = state.currentDomain || 'general';
+      if (code !== 0 || state.stats.failures > 0) {
+        console.log(`dpth: log? ${domain}/<context>/<strategy> failure`);
+      } else if (state.stats.failures > 0) {
+        // Recovered from errors
+        console.log(`dpth: log? ${domain}/<context>/<strategy> success`);
       }
-      
-      console.log('');
-      console.log(`🔍 dpth watcher summary:`);
-      console.log(`   Failures detected: ${state.stats.failures}`);
-      console.log(`   Signals logged: ${state.stats.logged}`);
     }
     
     process.exit(code ?? 0);
@@ -175,14 +170,15 @@ async function processOutput(
   state: WatcherState,
   source: 'stdout' | 'stderr',
   verbose: boolean,
-  quiet: boolean
+  quiet: boolean,
+  hintedDomains: Set<string>
 ): Promise<void> {
   const lines = text.split('\n');
   
   for (const line of lines) {
     if (!line.trim()) continue;
     
-    // Detect tool calls
+    // Detect tool calls and domain transitions
     if (PATTERNS.toolCall.test(line)) {
       state.stats.toolCalls++;
       state.lastToolCall = line.slice(0, 100);
@@ -191,6 +187,10 @@ async function processOutput(
       for (const [domain, pattern] of Object.entries(PATTERNS.domains)) {
         if (pattern.test(line)) {
           state.currentDomain = domain;
+          // Show hint on domain transition (first touch)
+          if (!quiet && !hintedDomains.has(domain)) {
+            showDomainHint(domain, hintedDomains);
+          }
           break;
         }
       }
@@ -200,38 +200,18 @@ async function processOutput(
       }
     }
     
-    // Detect errors/failures
+    // Detect errors/failures (just count, don't prompt mid-stream)
     if (PATTERNS.error.test(line)) {
       state.stats.failures++;
       
-      const domain = state.currentDomain || detectDomain(line) || 'general';
-      const context = extractContext(line);
-      const now = Date.now();
-      const domainKey = `${domain}:${context || '*'}`;
-      
-      // Throttle: only prompt once per domain per 5 seconds
-      const shouldPrompt = !state.promptedDomains.has(domainKey) && 
-                           (now - state.lastPromptTime > 2000);
-      
-      if (shouldPrompt && !quiet) {
-        state.lastPromptTime = now;
-        state.promptedDomains.add(domainKey);
-        
-        console.log('');
-        console.log(`   📝 dpth: Error in ${domain}. To log what you learned:`);
-        console.log(`      dpth: ${domain}/${context || '<context>'}/<strategy> <success|failure>`);
-        
-        // Query dpth for relevant signals (async, don't block)
-        querySignals(domain, context).then(signals => {
-          if (signals.length > 0) {
-            state.stats.warnings++;
-            console.log(`   💡 Known patterns for ${domain}:`);
-            for (const sig of signals.slice(0, 3)) {
-              const pct = Math.round(sig.successRate * 100);
-              console.log(`      ${sig.strategy}: ${pct}% success`);
-            }
-          }
-        }).catch(() => {});
+      // Update current domain if we can detect it from error
+      const errorDomain = detectDomain(line);
+      if (errorDomain && !state.currentDomain) {
+        state.currentDomain = errorDomain;
+        // Show hint on first error in this domain
+        if (!quiet && !hintedDomains.has(errorDomain)) {
+          showDomainHint(errorDomain, hintedDomains);
+        }
       }
     }
     
@@ -338,5 +318,60 @@ async function logSignal(domain: string, context: string, strategy: string, outc
     
   } catch {
     // Silently fail
+  }
+}
+
+// Detect domain from command string
+function detectDomainFromCommand(cmd: string): string | null {
+  const patterns: [RegExp, string][] = [
+    [/\bnpm\b|\byarn\b|\bpnpm\b|\bpackage\.json/, 'deps/npm'],
+    [/\bgit\b/, 'git'],
+    [/\bdocker\b|\bcontainer/, 'ops/docker'],
+    [/\bkubectl\b|\bk8s/, 'ops/k8s'],
+    [/\bpsql\b|\bpostgres/, 'database/postgres'],
+    [/\bmysql\b/, 'database/mysql'],
+    [/\bredis/, 'database/redis'],
+    [/\bcurl\b|\bfetch\b|\bhttp/, 'api'],
+    [/\baws\b/, 'cloud/aws'],
+    [/\bgcloud\b/, 'cloud/gcp'],
+    [/\bazure\b/, 'cloud/azure'],
+    [/\bstripe\b/, 'api/stripe'],
+    [/\btwilio\b/, 'api/twilio'],
+    [/\bsendgrid\b/, 'api/sendgrid'],
+    [/\btest\b|\bjest\b|\bvitest\b|\bpytest/, 'testing'],
+    [/\bbuild\b|\bwebpack\b|\bvite\b|\besbuild/, 'build'],
+    [/\bdeploy\b|\brelease/, 'ops/deploy'],
+  ];
+  
+  for (const [pattern, domain] of patterns) {
+    if (pattern.test(cmd)) return domain;
+  }
+  return null;
+}
+
+// Show domain hint (just presence, not advice)
+async function showDomainHint(domain: string, hinted: Set<string>): Promise<void> {
+  if (hinted.has(domain)) return;
+  hinted.add(domain);
+  
+  try {
+    const [mainDomain, subDomain] = domain.split('/');
+    const params = new URLSearchParams({ domain: mainDomain });
+    if (subDomain) params.set('context', subDomain);
+    
+    const res = await fetch(`${COORDINATOR}/calibrate?${params}`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    
+    if (!res.ok) return;
+    
+    const data = await res.json();
+    const count = data.count || data.totalAttempts || 0;
+    
+    if (count > 0) {
+      console.log(`dpth: ${domain} — ${count} signal${count === 1 ? '' : 's'}`);
+    }
+  } catch {
+    // Silent - don't disrupt the command
   }
 }
