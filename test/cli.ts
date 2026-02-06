@@ -3,9 +3,11 @@
  */
 
 import { execSync } from 'child_process';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const CLI = resolve(import.meta.dirname, '../bin/dpth.js');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CLI = resolve(__dirname, '../bin/dpth.js');
 const run = (args: string) => execSync(`node ${CLI} ${args}`, { encoding: 'utf-8' });
 
 let passed = 0;
