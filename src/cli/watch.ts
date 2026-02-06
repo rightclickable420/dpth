@@ -18,6 +18,8 @@ interface WatcherState {
   currentContext: string | null;
   lastToolCall: string | null;
   pendingOutcomes: Map<string, { domain: string; context: string; strategy: string; startTime: number }>;
+  lastPromptTime: number;
+  promptedDomains: Set<string>;
   stats: {
     toolCalls: number;
     failures: number;
@@ -69,6 +71,8 @@ export async function watch(opts: string[], cmd: string[]): Promise<void> {
     currentContext: null,
     lastToolCall: null,
     pendingOutcomes: new Map(),
+    lastPromptTime: 0,
+    promptedDomains: new Set(),
     stats: { toolCalls: 0, failures: 0, warnings: 0, logged: 0 },
   };
   
@@ -136,10 +140,24 @@ export async function watch(opts: string[], cmd: string[]): Promise<void> {
     
     if (!quiet) {
       console.log('');
+      
+      // Exit-aware prompt
+      if (code === 0 && state.stats.failures === 0) {
+        console.log(`   ✓ Command succeeded.`);
+        if (state.stats.logged === 0) {
+          console.log(`   📝 Anything worth logging? dpth: <domain>/<context>/<strategy> success`);
+        }
+      } else if (code !== 0 || state.stats.failures > 0) {
+        console.log(`   ✗ Command had issues (exit ${code}, ${state.stats.failures} errors).`);
+        if (state.stats.logged === 0) {
+          const domain = state.currentDomain || 'general';
+          console.log(`   📝 What did you learn? dpth: ${domain}/<context>/<what_failed_or_worked> <outcome>`);
+        }
+      }
+      
+      console.log('');
       console.log(`🔍 dpth watcher summary:`);
-      console.log(`   Tool calls detected: ${state.stats.toolCalls}`);
       console.log(`   Failures detected: ${state.stats.failures}`);
-      console.log(`   Warnings shown: ${state.stats.warnings}`);
       console.log(`   Signals logged: ${state.stats.logged}`);
     }
     
@@ -188,26 +206,33 @@ async function processOutput(
       
       const domain = state.currentDomain || detectDomain(line) || 'general';
       const context = extractContext(line);
+      const now = Date.now();
+      const domainKey = `${domain}:${context || '*'}`;
       
-      // Prompt for signal report immediately
-      if (!quiet) {
+      // Throttle: only prompt once per domain per 5 seconds
+      const shouldPrompt = !state.promptedDomains.has(domainKey) && 
+                           (now - state.lastPromptTime > 2000);
+      
+      if (shouldPrompt && !quiet) {
+        state.lastPromptTime = now;
+        state.promptedDomains.add(domainKey);
+        
         console.log('');
-        console.log(`   📝 dpth: To log what you learned, type:`);
-        console.log(`      dpth: ${domain}/${context || '<context>'}/<what_worked_or_failed> <success|failure>`);
-      }
-      
-      // Query dpth for relevant signals (async, don't block)
-      querySignals(domain, context).then(signals => {
-        if (signals.length > 0 && !quiet) {
-          state.stats.warnings++;
-          console.log(`   💡 dpth: Known patterns for ${domain}/${context || '*'}:`);
-          for (const sig of signals.slice(0, 3)) {
-            const pct = Math.round(sig.successRate * 100);
-            console.log(`      ${sig.strategy}: ${pct}% success`);
+        console.log(`   📝 dpth: Error in ${domain}. To log what you learned:`);
+        console.log(`      dpth: ${domain}/${context || '<context>'}/<strategy> <success|failure>`);
+        
+        // Query dpth for relevant signals (async, don't block)
+        querySignals(domain, context).then(signals => {
+          if (signals.length > 0) {
+            state.stats.warnings++;
+            console.log(`   💡 Known patterns for ${domain}:`);
+            for (const sig of signals.slice(0, 3)) {
+              const pct = Math.round(sig.successRate * 100);
+              console.log(`      ${sig.strategy}: ${pct}% success`);
+            }
           }
-          console.log('');
-        }
-      }).catch(() => {}); // Ignore errors
+        }).catch(() => {});
+      }
     }
     
     // Detect retries
