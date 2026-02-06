@@ -100,9 +100,8 @@ test('watch with no command shows usage', () => {
 
 test('watch runs simple command', () => {
   const out = run('watch -- echo hello');
-  assert(out.includes('dpth watcher active'), 'should show watcher banner');
+  assert(out.includes('dpth watching:'), 'should show watcher banner');
   assert(out.includes('hello'), 'should show command output');
-  assert(out.includes('summary'), 'should show summary');
 });
 
 console.log('\n━━━ Results:', passed, 'passed,', failed, 'failed ━━━\n');

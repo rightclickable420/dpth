@@ -10,6 +10,9 @@
  *   dpth status                       Network status
  */
 
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { query } from './query.js';
 import { log } from './log.js';
 import { watch } from './watch.js';
@@ -120,12 +123,14 @@ Learn more: https://dpth.io
 }
 
 function getVersion(): string {
-  // Read from package.json at runtime
   try {
-    const pkg = require('../../package.json');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const pkgPath = join(__dirname, '../../package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
     return `dpth v${pkg.version}`;
   } catch {
-    return 'dpth v0.5.0';
+    return 'dpth v0.6.4';
   }
 }
 
