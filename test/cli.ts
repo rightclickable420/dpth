@@ -50,37 +50,44 @@ test('--version shows version', () => {
   assert(out.includes('dpth v'), 'should show version');
 });
 
-console.log('\nStatus:');
-test('status connects to network', () => {
-  const out = run('status');
-  assert(out.includes('dpth network status'), 'should show status header');
-  assert(out.includes('Coordinator'), 'should show coordinator');
-  assert(out.includes('Intelligence'), 'should show intelligence section');
-});
+// Network tests - may be skipped in CI if DPTH_SKIP_NETWORK is set
+const skipNetwork = process.env.DPTH_SKIP_NETWORK === '1' || process.env.CI === 'true';
 
-console.log('\nQuery:');
-test('query with no args shows usage', () => {
-  const out = run('query');
-  assert(out.includes('Usage:'), 'should show usage');
-});
+if (!skipNetwork) {
+  console.log('\nStatus:');
+  test('status connects to network', () => {
+    const out = run('status');
+    assert(out.includes('dpth network status'), 'should show status header');
+    assert(out.includes('Coordinator'), 'should show coordinator');
+    assert(out.includes('Intelligence'), 'should show intelligence section');
+  });
 
-test('query ui returns results', () => {
-  const out = run('query ui');
-  // Might have results or "exploring new territory"
-  assert(out.includes('dpth') || out.includes('exploring'), 'should return something');
-});
+  console.log('\nQuery:');
+  test('query with no args shows usage', () => {
+    const out = run('query');
+    assert(out.includes('Usage:'), 'should show usage');
+  });
 
-console.log('\nLog:');
-test('log with no args shows usage', () => {
-  const out = run('log');
-  assert(out.includes('Usage:'), 'should show usage');
-});
+  test('query ui returns results', () => {
+    const out = run('query ui');
+    // Might have results or "exploring new territory"
+    assert(out.includes('dpth') || out.includes('exploring'), 'should return something');
+  });
 
-test('log signal works', () => {
-  const out = run('log test cli_test test_signal success');
-  assert(out.includes('✓ dpth:'), 'should confirm signal');
-  assert(out.includes('test/cli_test/test_signal'), 'should show path');
-});
+  console.log('\nLog:');
+  test('log with no args shows usage', () => {
+    const out = run('log');
+    assert(out.includes('Usage:'), 'should show usage');
+  });
+
+  test('log signal works', () => {
+    const out = run('log test cli_test test_signal success');
+    assert(out.includes('✓ dpth:'), 'should confirm signal');
+    assert(out.includes('test/cli_test/test_signal'), 'should show path');
+  });
+} else {
+  console.log('\n(Skipping network tests in CI)');
+}
 
 console.log('\nWatch:');
 test('watch with no command shows usage', () => {
