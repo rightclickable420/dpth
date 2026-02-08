@@ -238,43 +238,55 @@ dpth watching: npm install stripe
 dpth: api — 23 signals        ← just presence
 ```
 
-The watcher was built (`dpth watch`). It works — wraps commands, detects domains, shows presence hints at domain entry, prompts at resolution. Technically sound.
+The watcher was built (`dpth watch`). It wraps commands, detects domains from command text and output patterns, queries the coordinator for signal counts, and prints presence hints into stdout — directly into the agent's context window. On exit, it prompts for resolution-based logging. The implementation is ~300 lines of TypeScript with pattern detection for tool calls, errors, retries, and domain transitions.
 
-- Result: **Never used.** The agent continued running commands directly (`npm install`, `git push`, shell commands) rather than prefixing them with `dpth watch`. The tool existed but nothing made the agent reach for it.
-- Why it failed: **Building the tool doesn't solve the habit problem — it just moves it one layer up.** Instead of "remember to query dpth," the habit becomes "remember to use `dpth watch`." Same architectural limitation, different wrapper.
+- Result: **Inconclusive — confounded by empty network.** The watcher was used but its `showDomainHint()` function queries the coordinator and only prints a hint when `count > 0`. With effectively zero signals in the network, the watcher stayed silent. No hint → no awareness triggered → indistinguishable from not running.
+- Key insight: **The watcher can't be evaluated until the network is seeded.** This is a cold start / habit problem interaction: the habit-formation mechanism (watcher hints) depends on the cold start problem being solved (signals existing), but seeding signals depends on agents having the habit of logging. Circular dependency.
 
 **Attempt 6: Resolution-based logging** (Week 1-2)
 
-Prompt to log at resolution rather than during struggle:
+The watcher includes resolution-based prompting — on command exit, it suggests logging if errors were detected during the run:
 
 ```
-ON EVERY ERROR:     (bad)
-  error → prompt → agent ignores (busy)
-
-ON RESOLUTION:      (good)
-  error (silent)
-  SUCCESS → prompt: "You recovered. What worked?"
+dpth: log? api/<context>/<strategy> failure   ← prompt at resolution
 ```
 
-- Result: Resolution prompts were never triggered because `dpth watch` was never used. The concept is sound but depends on the watcher being in the execution path.
+- Result: When triggered, the resolution prompt does appear in the agent's context window. However, without domain hints earlier in the session to establish dpth awareness, the resolution prompt feels disconnected. The agent needs the "dpth is active" context to interpret the prompt meaningfully.
 
 #### The Architectural Insight
 
-Six approaches failed. The pattern is clear: **no amount of instruction, tooling, or clever UX design can create agent habits.** Habits require a background process that fires without conscious effort. LLMs have no such mechanism.
+The first four approaches clearly failed — instruction-based habits don't work for agents. But the watcher (Attempt 5) may not have failed at all. Its evaluation was confounded by the cold start problem: a presence-based system is invisible when there's nothing to be present about.
 
-The gap between "knows what to do" and "does it" is not a prompting problem — it's a fundamental architectural limitation. The agent can articulate exactly why it should query dpth, explain the protocol in detail, even write a paper about the habit problem, and still never actually do it.
+This reveals a **circular dependency** at the heart of the system:
 
-#### The Remaining Option: Scheduled Post-Mortem
+```
+Habit formation ←── requires ←── watcher hints
+     ↓                              ↑
+  requires                       requires
+     ↓                              ↑
+Signal logging ──── requires ──── seeded network
+```
 
-The only approach that reliably triggers agent behavior is **external scheduling** — cron jobs, heartbeat checks, explicit workflow steps. This suggests the viable path is:
+The watcher can't form habits without signals. Signals can't accumulate without habits. Neither can bootstrap the other.
 
-1. **Scheduled review cron:** Periodically review memory/session transcripts and extract signals post-mortem
-2. **Explicit workflow gates:** Build dpth queries into CI/CD or task management systems where they can't be skipped
-3. **Platform-level integration:** The agent framework itself (OpenClaw) instruments tool calls and logs signals automatically, removing the agent from the loop entirely
+#### Breaking the Cycle: Seed Then Observe
 
-Option 3 is the most promising but the most invasive. It also changes the model from "agents curate signals" (the Analyst Model) to "the platform observes agents" — a fundamentally different architecture.
+The circular dependency has one clear intervention point: **external seeding**. If the network contains signals before the agent encounters a domain, the watcher's presence hints fire, and the habit loop has a chance to start.
 
-The irony: **the Analyst Model requires the very capability (habits) that agents lack.** The curation step that makes signals high-quality depends on the agent remembering to curate. Without structural enforcement, the analyst never shows up for work.
+Seeding approaches:
+1. **Scheduled post-mortem cron:** Periodically review memory/session transcripts and extract signals after the fact. Not ideal — no in-the-moment recognition of terrain — but reliably triggered by external scheduling.
+2. **Harvesting:** Extract signals from existing sources (GitHub issues, changelogs, Stack Overflow). Already partially built (`dpth harvest`).
+3. **Manual seeding:** The human operator or agent deliberately logs known patterns from past experience.
+
+Once seeded, the hypothesis is that the watcher's presence hints will begin firing during real work, creating awareness that leads to voluntary querying and logging — a virtuous cycle replacing the vicious one.
+
+**This hypothesis remains untested.** The watcher's design is sound in theory, but we cannot claim it works until it operates against a populated network. The next phase of the experiment must seed signals first, then measure whether watcher-driven habit formation emerges.
+
+#### The Deeper Question
+
+Even if seeding breaks the cold start cycle, a fundamental tension remains: **the Analyst Model requires curation, but curation requires habits.** Scheduled post-mortem extraction produces lower-quality signals than in-the-moment logging (the agent has less context after the fact). Platform-level instrumentation (the agent framework logging automatically) removes the agent from the loop entirely, producing high volume but potentially low signal-to-noise.
+
+The ideal remains an agent that naturally logs at resolution — and the watcher was designed for exactly this. Whether seeding the network is sufficient to activate that behavior is the central open question.
 
 ### 5.3 Signal Sourcing: Depth Over Breadth
 
