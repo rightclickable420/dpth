@@ -23,4 +23,14 @@ export * from './temporal.js';
 export * from './embed.js';
 export * from './router.js';
 export { dpth, Dpth } from './dpth.js';
-export type { DpthOptions, ResolveOptions, ResolveResult, SnapshotRecord, DiffResult, CorrelationHit } from './dpth.js';
+export type { 
+  DpthOptions, 
+  ResolveOptions, 
+  ResolveResult, 
+  SnapshotRecord, 
+  DiffResult, 
+  CorrelationHit,
+  EmbedFn,
+  SearchSimilarOptions,
+  SimilarEntity,
+} from './dpth.js';

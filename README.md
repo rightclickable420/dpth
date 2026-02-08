@@ -97,6 +97,35 @@ Revenue went up 20% the same month commits doubled. Your biggest customer just o
 ### Content-Addressed Storage
 SHA-256 hashed chunks. Immutable, deduplicated, cache forever. Like git for your data.
 
+### Semantic Search (v0.7.0+)
+Find entities by meaning, not just matching. Bring your own embedding function — works with OpenAI, fastembed, transformers.js, or any other embedder.
+
+```typescript
+import { dpth } from 'dpth/dpth';
+import { embed } from 'fastembed';  // or your preferred embedder
+
+const db = dpth({
+  path: './data.db',
+  embedFn: async (text) => embed(text)  // auto-embeds on resolve
+});
+
+// Entities are automatically embedded when created/updated
+await db.entity.resolve({
+  type: 'company',
+  name: 'Acme Software Corp',
+  source: 'stripe',
+  externalId: 'cus_acme',
+  attributes: { industry: 'SaaS', arr: 500000 }
+});
+
+// Search by natural language
+const similar = await db.entity.searchSimilar('enterprise SaaS customers', { 
+  limit: 10,
+  type: 'company'  // optional filter
+});
+// → [{ entity, score: 0.89 }, ...]
+```
+
 ## Storage
 
 ```typescript

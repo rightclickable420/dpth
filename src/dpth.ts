@@ -43,6 +43,9 @@ import type {
 
 // ─── Types ───────────────────────────────────────────
 
+/** Embedding function type — bring your own embedder */
+export type EmbedFn = (text: string) => Promise<number[]>;
+
 export interface DpthOptions {
   /** Storage adapter (default: MemoryAdapter) */
   adapter?: StorageAdapter;
@@ -69,6 +72,20 @@ export interface DpthOptions {
    * Default: undefined (no WAL, signals may be lost on crash/network failure)
    */
   walPath?: string;
+  /**
+   * Embedding function for semantic search. When provided:
+   * - Entities are auto-embedded on resolve()
+   * - entity.searchSimilar() becomes available
+   * 
+   * Bring your own embedder — use fastembed, OpenAI, transformers.js, etc.
+   * 
+   * @example
+   * embedFn: async (text) => {
+   *   const { embed } = await import('fastembed');
+   *   return embed(text);
+   * }
+   */
+  embedFn?: EmbedFn;
 }
 
 /** Object-style options for entity.resolve() */
@@ -126,6 +143,8 @@ export class Dpth {
   private _ready: Promise<void>;
   /** Network signal tracker (when network: true) */
   private _network: NetworkLayer | null = null;
+  /** Embedding function for semantic search */
+  private _embedFn: EmbedFn | null = null;
   
   /** Entity resolution and management */
   public entity: EntityAPI;
@@ -140,12 +159,13 @@ export class Dpth {
   
   constructor(options: DpthOptions = {}) {
     this.adapter = options.adapter || new MemoryAdapter();
+    this._embedFn = options.embedFn || null;
     
     if (options.network) {
       this._network = new NetworkLayer(options.coordinatorUrl, options.walPath);
     }
     
-    this.entity = new EntityAPI(this.adapter, this._network);
+    this.entity = new EntityAPI(this.adapter, this._network, this._embedFn);
     this.temporal = new TemporalAPI(this.adapter);
     this.correlation = new CorrelationAPI(this.adapter);
     this.vector = new VectorAPI(this.adapter);
@@ -159,9 +179,18 @@ export class Dpth {
     if (options.path) {
       try {
         const { SQLiteAdapter } = await import('./adapter-sqlite.js');
-        this.adapter = new SQLiteAdapter(options.path);
+        let baseAdapter: StorageAdapter = new SQLiteAdapter(options.path);
+        
+        // If embedFn provided, wrap in VectorOverlay for semantic search
+        if (this._embedFn) {
+          const { VectorOverlay } = await import('./adapter-vector.js');
+          this.adapter = new VectorOverlay(baseAdapter);
+        } else {
+          this.adapter = baseAdapter;
+        }
+        
         // Re-initialize APIs with the real adapter
-        this.entity = new EntityAPI(this.adapter, this._network);
+        this.entity = new EntityAPI(this.adapter, this._network, this._embedFn);
         this.temporal = new TemporalAPI(this.adapter);
         this.correlation = new CorrelationAPI(this.adapter);
         this.vector = new VectorAPI(this.adapter);
@@ -303,8 +332,28 @@ export class Dpth {
 
 // ─── Entity API ──────────────────────────────────────
 
+/** Options for semantic entity search */
+export interface SearchSimilarOptions {
+  /** Maximum results to return (default: 10) */
+  limit?: number;
+  /** Minimum similarity score (default: 0.5) */
+  minScore?: number;
+  /** Filter by entity type */
+  type?: EntityType;
+}
+
+/** Semantic search result */
+export interface SimilarEntity {
+  entity: Entity;
+  score: number;
+}
+
 class EntityAPI {
-  constructor(private adapter: StorageAdapter, private network: NetworkLayer | null = null) {}
+  constructor(
+    private adapter: StorageAdapter, 
+    private network: NetworkLayer | null = null,
+    private embedFn: EmbedFn | null = null
+  ) {}
   
   /**
    * Resolve an entity — find existing match or create new.
@@ -423,6 +472,9 @@ class EntityAPI {
       await this.adapter.put('source_index', sKey, entity.id);
       await this.updateEmailIndex(entity);
       
+      // Auto-embed if embedFn provided (non-blocking)
+      this.embedEntity(entity).catch(() => {});
+      
       // Report successful merge to the network (non-blocking)
       if (this.network) {
         const existingSource = entity.sources[0]?.sourceId;
@@ -472,6 +524,9 @@ class EntityAPI {
     await this.adapter.put('entities', id, entity);
     await this.adapter.put('source_index', sKey, id);
     await this.updateEmailIndex(entity);
+    
+    // Auto-embed if embedFn provided (non-blocking)
+    this.embedEntity(entity).catch(() => {});
     
     return { entity, isNew: true, confidence: 1.0 };
   }
@@ -691,6 +746,105 @@ class EntityAPI {
     return best;
   }
   
+  /**
+   * Search entities by semantic similarity to text.
+   * Requires embedFn to be provided in dpth options.
+   * 
+   * @example
+   * const similar = await db.entity.searchSimilar('enterprise SaaS customers', { limit: 10 });
+   * // → [{ entity, score: 0.89 }, ...]
+   */
+  async searchSimilar(text: string, options?: SearchSimilarOptions): Promise<SimilarEntity[]> {
+    if (!this.embedFn) {
+      throw new AdapterCapabilityError(
+        'entity.searchSimilar()',
+        'an embedFn in dpth options'
+      );
+    }
+    
+    const vec = this.adapter as VectorAdapter;
+    if (!('searchVector' in vec)) {
+      throw new AdapterCapabilityError(
+        'entity.searchSimilar()',
+        'a VectorAdapter (auto-enabled when embedFn is provided with path option)'
+      );
+    }
+    
+    const limit = options?.limit ?? 10;
+    const minScore = options?.minScore ?? 0.5;
+    
+    // Embed the query text
+    const queryVector = await this.embedFn(text);
+    
+    // Search for similar entities
+    const results = await vec.searchVector('entity_embeddings', queryVector, limit * 2, minScore);
+    
+    // Fetch full entities and filter by type if specified
+    const entities: SimilarEntity[] = [];
+    for (const result of results) {
+      const entity = await this.get(result.key);
+      if (entity && (!options?.type || entity.type === options.type)) {
+        entities.push({ entity, score: result.score });
+        if (entities.length >= limit) break;
+      }
+    }
+    
+    return entities;
+  }
+  
+  /**
+   * Check if semantic search is available (embedFn was provided)
+   */
+  get semanticSearchAvailable(): boolean {
+    return this.embedFn !== null;
+  }
+  
+  // ── Private: embedding ──
+  
+  /**
+   * Generate text representation of an entity for embedding
+   */
+  private entityToText(entity: Entity): string {
+    const parts = [
+      `${entity.type}: ${entity.name}`,
+      ...entity.aliases.map(a => `also known as ${a}`),
+    ];
+    
+    // Add key attributes
+    for (const [key, value] of Object.entries(entity.attributes)) {
+      if (typeof value.current === 'string' || typeof value.current === 'number') {
+        parts.push(`${key}: ${value.current}`);
+      }
+    }
+    
+    // Add source information
+    const sources = entity.sources.map(s => s.sourceId).join(', ');
+    parts.push(`found in: ${sources}`);
+    
+    return parts.join('. ');
+  }
+  
+  /**
+   * Embed an entity (called automatically on resolve if embedFn provided)
+   */
+  private async embedEntity(entity: Entity): Promise<void> {
+    if (!this.embedFn) return;
+    
+    const vec = this.adapter as VectorAdapter;
+    if (!('putVector' in vec)) return;
+    
+    const text = this.entityToText(entity);
+    const vector = await this.embedFn(text);
+    
+    await vec.putVector('entity_embeddings', entity.id, vector, {
+      type: entity.type,
+      name: entity.name,
+      text,
+    });
+  }
+  
+  // ── Private: matching ──
+
   private fuzzyScore(a: string, b: string): number {
     if (a === b) return 1;
     if (!a.length || !b.length) return 0;

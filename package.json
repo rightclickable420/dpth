@@ -1,6 +1,6 @@
 {
   "name": "dpth",
-  "version": "0.6.6",
+  "version": "0.7.0",
   "description": "Collective intelligence for AI agents. Entity resolution, temporal history, correlation detection, and network signals.",
   "type": "module",
   "main": "dist/index.js",
@@ -60,7 +60,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "test": "tsx test/smoke.ts && tsx test/integration.ts && tsx test/api.ts && tsx test/adapters.ts && tsx test/dpth.ts && tsx test/cli.ts",
+    "test": "tsx test/smoke.ts && tsx test/integration.ts && tsx test/api.ts && tsx test/adapters.ts && tsx test/dpth.ts && tsx test/semantic.ts && tsx test/cli.ts",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
