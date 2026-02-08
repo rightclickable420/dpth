@@ -83,6 +83,9 @@ export async function watch(opts: string[], cmd: string[]): Promise<void> {
   // Track domains we've already shown hints for this session
   const hintedDomains = new Set<string>();
   
+  // Fetch network vocabulary before starting (what domains/contexts exist)
+  await fetchVocabulary();
+  
   // Try to detect domain from command itself (await before spawning)
   const cmdStr = cmd.join(' ').toLowerCase();
   const initialDomain = detectDomainFromCommand(cmdStr);
@@ -321,26 +324,77 @@ async function logSignal(domain: string, context: string, strategy: string, outc
   }
 }
 
-// Detect domain from command string
+// Cache of known domains + contexts from the coordinator
+let networkVocabulary: { domains: string[]; contexts: string[] } | null = null;
+
+async function fetchVocabulary(): Promise<{ domains: string[]; contexts: string[] }> {
+  if (networkVocabulary) return networkVocabulary;
+  try {
+    const res = await fetch(`${COORDINATOR}/vocabulary`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return { domains: [], contexts: [] };
+    const data = await res.json();
+    networkVocabulary = {
+      domains: Object.keys(data.domains || {}),
+      contexts: Object.keys(data.contexts || {}),
+    };
+    return networkVocabulary;
+  } catch {
+    return { domains: [], contexts: [] };
+  }
+}
+
+// Detect domain from command string by matching against known network domains + contexts
 function detectDomainFromCommand(cmd: string): string | null {
+  // First try matching against known network vocabulary
+  if (networkVocabulary) {
+    const words = cmd.toLowerCase().split(/[\s/\\.\-_]+/);
+    
+    // Check if any word matches a known context (more specific)
+    for (const ctx of networkVocabulary.contexts) {
+      const ctxLower = ctx.toLowerCase();
+      if (words.some(w => w === ctxLower || cmd.toLowerCase().includes(ctxLower))) {
+        // Find which domain this context belongs to — return domain
+        // For now just return the context as a hint; showDomainHint will search
+        return ctx;
+      }
+    }
+    
+    // Check if any word matches a known domain
+    for (const domain of networkVocabulary.domains) {
+      const domainLower = domain.toLowerCase();
+      if (words.some(w => w === domainLower || cmd.toLowerCase().includes(domainLower))) {
+        return domain;
+      }
+    }
+  }
+
+  // Fallback: static patterns for common tools
   const patterns: [RegExp, string][] = [
-    [/\bnpm\b|\byarn\b|\bpnpm\b|\bpackage\.json/, 'deps/npm'],
+    [/\bnpm\b|\byarn\b|\bpnpm\b|\bpackage\.json/, 'npm'],
     [/\bgit\b/, 'git'],
-    [/\bdocker\b|\bcontainer/, 'ops/docker'],
-    [/\bkubectl\b|\bk8s/, 'ops/k8s'],
-    [/\bpsql\b|\bpostgres/, 'database/postgres'],
-    [/\bmysql\b/, 'database/mysql'],
-    [/\bredis/, 'database/redis'],
+    [/\bdocker\b|\bcontainer/, 'docker'],
+    [/\bkubectl\b|\bk8s/, 'k8s'],
+    [/\bpsql\b|\bpostgres/, 'postgres'],
+    [/\bmysql\b/, 'mysql'],
+    [/\bredis/, 'redis'],
     [/\bcurl\b|\bfetch\b|\bhttp/, 'api'],
-    [/\baws\b/, 'cloud/aws'],
-    [/\bgcloud\b/, 'cloud/gcp'],
-    [/\bazure\b/, 'cloud/azure'],
-    [/\bstripe\b/, 'api/stripe'],
-    [/\btwilio\b/, 'api/twilio'],
-    [/\bsendgrid\b/, 'api/sendgrid'],
+    [/\baws\b/, 'aws'],
+    [/\bgcloud\b/, 'gcp'],
+    [/\bazure\b/, 'azure'],
+    [/\bstripe\b/, 'stripe'],
     [/\btest\b|\bjest\b|\bvitest\b|\bpytest/, 'testing'],
     [/\bbuild\b|\bwebpack\b|\bvite\b|\besbuild/, 'build'],
-    [/\bdeploy\b|\brelease/, 'ops/deploy'],
+    [/\bdeploy\b|\brelease/, 'deploy'],
+    [/\bnginx\b/, 'nginx'],
+    [/\btailscale\b/, 'tailscale'],
+    [/\bpm2\b/, 'pm2'],
+    [/\badb\b/, 'adb'],
+    [/\bwalmart\b/, 'walmart'],
+    [/\bfathom\b/, 'fathom'],
+    [/\bdpth\b/, 'dpth'],
+    [/\bnext\b|\bnextjs\b/, 'nextjs'],
   ];
   
   for (const [pattern, domain] of patterns) {
@@ -350,26 +404,32 @@ function detectDomainFromCommand(cmd: string): string | null {
 }
 
 // Show domain hint (just presence, not advice)
-async function showDomainHint(domain: string, hinted: Set<string>): Promise<void> {
-  if (hinted.has(domain)) return;
-  hinted.add(domain);
+// Searches both as a domain and as a context to find matching signals
+async function showDomainHint(hint: string, hinted: Set<string>): Promise<void> {
+  if (hinted.has(hint)) return;
+  hinted.add(hint);
   
   try {
-    const [mainDomain, subDomain] = domain.split('/');
-    const params = new URLSearchParams({ domain: mainDomain });
-    if (subDomain) params.set('context', subDomain);
-    
-    const res = await fetch(`${COORDINATOR}/calibrate?${params}`, {
+    // Try as domain first
+    let res = await fetch(`${COORDINATOR}/calibrate?domain=${encodeURIComponent(hint)}`, {
       signal: AbortSignal.timeout(2000),
     });
     
-    if (!res.ok) return;
+    let data = res.ok ? await res.json() : null;
+    let count = data?.count || 0;
+    let label = hint;
     
-    const data = await res.json();
-    const count = data.count || data.totalAttempts || 0;
+    // If no results as domain, try as context
+    if (count === 0) {
+      res = await fetch(`${COORDINATOR}/calibrate?context=${encodeURIComponent(hint)}`, {
+        signal: AbortSignal.timeout(2000),
+      });
+      data = res.ok ? await res.json() : null;
+      count = data?.count || 0;
+    }
     
     if (count > 0) {
-      console.log(`dpth: ${domain} — ${count} signal${count === 1 ? '' : 's'}`);
+      console.log(`dpth: ${label} — ${count} signal${count === 1 ? '' : 's'}`);
     }
   } catch {
     // Silent - don't disrupt the command
