@@ -14,12 +14,15 @@
 import type { VectorAdapter, VectorResult, QueryFilter } from './storage.js';
 import { SQLiteAdapter } from './adapter-sqlite.js';
 
-// sqlite-vec loading state
-let sqliteVecLoaded = false;
+// sqlite-vec module cache (shared across instances)
 let sqliteVecModule: any = null;
 
+// Track which database instances have loaded the extension
+const loadedDatabases = new WeakSet();
+
 async function loadSqliteVec(db: any): Promise<void> {
-  if (sqliteVecLoaded) return;
+  // Skip if this specific database already has vec0 loaded
+  if (loadedDatabases.has(db)) return;
   
   try {
     // Use dynamic import - works with ESM and most bundlers
@@ -27,8 +30,9 @@ async function loadSqliteVec(db: any): Promise<void> {
     if (!sqliteVecModule) {
       sqliteVecModule = await import('sqlite-vec');
     }
+    // Load the extension into THIS database
     sqliteVecModule.load(db);
-    sqliteVecLoaded = true;
+    loadedDatabases.add(db);
   } catch (err) {
     throw new Error(
       'sqlite-vec is required for SqliteVecAdapter. Install it:\n' +
