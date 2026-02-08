@@ -178,15 +178,23 @@ export class Dpth {
     // If path provided, dynamically load SQLite adapter
     if (options.path) {
       try {
-        const { SQLiteAdapter } = await import('./adapter-sqlite.js');
-        let baseAdapter: StorageAdapter = new SQLiteAdapter(options.path);
-        
-        // If embedFn provided, wrap in VectorOverlay for semantic search
-        if (this._embedFn) {
-          const { VectorOverlay } = await import('./adapter-vector.js');
-          this.adapter = new VectorOverlay(baseAdapter);
-        } else {
-          this.adapter = baseAdapter;
+        // Try SqliteVecAdapter first (persistent vectors)
+        try {
+          const { SqliteVecAdapter } = await import('./adapter-sqlite-vec.js');
+          this.adapter = new SqliteVecAdapter(options.path);
+          console.log('dpth: using SqliteVecAdapter (persistent vectors)');
+        } catch {
+          // Fall back to SQLiteAdapter + VectorOverlay
+          const { SQLiteAdapter } = await import('./adapter-sqlite.js');
+          let baseAdapter: StorageAdapter = new SQLiteAdapter(options.path);
+          
+          // If embedFn provided, wrap in VectorOverlay for semantic search
+          if (this._embedFn) {
+            const { VectorOverlay } = await import('./adapter-vector.js');
+            this.adapter = new VectorOverlay(baseAdapter);
+          } else {
+            this.adapter = baseAdapter;
+          }
         }
         
         // Re-initialize APIs with the real adapter

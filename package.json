@@ -1,6 +1,6 @@
 {
   "name": "dpth",
-  "version": "0.7.0",
+  "version": "0.7.2",
   "description": "Collective intelligence for AI agents. Entity resolution, temporal history, correlation detection, and network signals.",
   "type": "module",
   "main": "dist/index.js",
@@ -44,6 +44,10 @@
     "./adapter-vector": {
       "import": "./dist/adapter-vector.js",
       "types": "./dist/adapter-vector.d.ts"
+    },
+    "./adapter-sqlite-vec": {
+      "import": "./dist/adapter-sqlite-vec.js",
+      "types": "./dist/adapter-sqlite-vec.d.ts"
     },
     "./dpth": {
       "import": "./dist/dpth.js",
@@ -89,10 +93,14 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^12.6.2",
+    "sqlite-vec": "^0.1.7-alpha.2"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {
+      "optional": true
+    },
+    "sqlite-vec": {
       "optional": true
     }
   },
@@ -107,6 +115,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",
-    "hono": "^4.11.7"
+    "hono": "^4.11.7",
+    "sqlite-vec": "^0.1.7-alpha.2"
   }
 }

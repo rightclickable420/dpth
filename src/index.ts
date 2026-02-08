@@ -16,6 +16,7 @@
 
 export * from './types.js';
 export * from './storage.js';
+export { SqliteVecAdapter } from './adapter-sqlite-vec.js';
 export * from './errors.js';
 export * from './entity.js';
 export * from './correlation.js';
