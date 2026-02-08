@@ -194,62 +194,87 @@ The cold start solution may be **depth over breadth**: deep extraction from one 
 
 ### 5.2 The Habit Problem
 
-A central challenge emerged: **when does an agent query the network?**
+A central challenge emerged: **when does an agent query the network, and when does it log what it learned?**
 
-Traditional knowledge bases require users to *remember* to consult them. For AI agents, "habits" are unreliable — there's no persistent memory between sessions, no muscle memory, no intuition.
+Traditional knowledge bases require users to *remember* to consult them. For AI agents, "habits" are unreliable — there's no persistent memory between sessions, no muscle memory, no intuition. An LLM has no subconscious; no basal ganglia firing procedural memory without conscious effort. Every action requires explicit presence in the active context window at the moment of decision.
 
-We identified a chicken-and-egg problem:
+We identified a chicken-and-egg problem for querying:
 
 1. Queries need **specificity** to return useful results
 2. Specificity comes from knowing the **context and strategy**
 3. But context only becomes clear **after encountering a problem**
 4. Yet we want help **before** hitting known walls
 
-#### Failed Approaches
+#### Failed Approaches (Chronological)
 
-**Habit-based querying:** "Always query before acting."
+**Attempt 1: Instruction-based habits** (Week 1)
+
+The agent's persistent instructions (AGENTS.md) were updated with explicit dpth directives: "Query before decisions. The log follows naturally." A `dpth query` section with examples was added to the instructions loaded every session.
+
+- Result: **Zero queries issued.** Over 9 days of active work including API debugging, package publishing, bot detection troubleshooting, and infrastructure work, the agent never once ran `dpth query` before making a decision. The instruction was loaded every session and completely ignored.
+- Why it failed: When deep in a task (e.g., debugging a vec0 loading bug), "also query dpth" simply doesn't surface. The instruction competes with the immediate problem for context window attention, and the immediate problem always wins.
+
+**Attempt 2: Habit-based querying** (Week 1)
+
+"Always query before acting."
 - Failed because: which query? "api" returns noise, "api/stripe/webhook_timeout" requires knowing about the wall before hitting it.
 
-**Error-triggered querying:** "Query when you see an error."
+**Attempt 3: Error-triggered querying** (Week 1)
+
+"Query when you see an error."
 - Failed because: by then you've already hit the wall. The learning comes too late.
 
-**Advice injection:** "Show relevant tips when entering a domain."
+**Attempt 4: Advice injection** (Week 1)
+
+"Show relevant tips when entering a domain."
 - Failed because: without knowing the specific task, tips are usually irrelevant. Noise erodes trust.
 
-#### Solution: Presence, Not Advice
+**Attempt 5: Presence, Not Advice — The Watcher** (Week 1-2)
 
-The breakthrough: **the watcher shouldn't give advice. It should indicate presence.**
+The theoretical breakthrough: the watcher shouldn't give advice, it should indicate presence.
 
 ```
 dpth watching: npm install stripe
 dpth: api — 23 signals        ← just presence
 ```
 
-This accomplishes:
-- **Triggers awareness** at domain entry (the right time)
-- **No noise** (doesn't guess what's relevant)
-- **Agent autonomy** (they decide whether to query)
-- **Zero wrong advice** (you can't be wrong if you don't advise)
+The watcher was built (`dpth watch`). It works — wraps commands, detects domains, shows presence hints at domain entry, prompts at resolution. Technically sound.
 
-The agent sees "23 signals exist for this domain" and can choose to explore or proceed. The query decision stays with the agent, who has context the watcher can't infer.
+- Result: **Never used.** The agent continued running commands directly (`npm install`, `git push`, shell commands) rather than prefixing them with `dpth watch`. The tool existed but nothing made the agent reach for it.
+- Why it failed: **Building the tool doesn't solve the habit problem — it just moves it one layer up.** Instead of "remember to query dpth," the habit becomes "remember to use `dpth watch`." Same architectural limitation, different wrapper.
 
-#### Resolution-Based Logging
+**Attempt 6: Resolution-based logging** (Week 1-2)
 
-Similarly, prompting to log on every error creates noise. The insight: **prompt at resolution, not during struggle.**
+Prompt to log at resolution rather than during struggle:
 
 ```
 ON EVERY ERROR:     (bad)
   error → prompt → agent ignores (busy)
-  error → prompt → agent ignores
-  error → prompt → agent ignores
 
 ON RESOLUTION:      (good)
   error (silent)
-  error (silent)  
   SUCCESS → prompt: "You recovered. What worked?"
 ```
 
-Resolution captures what the agent actually learned. Mid-struggle prompts are interruptions.
+- Result: Resolution prompts were never triggered because `dpth watch` was never used. The concept is sound but depends on the watcher being in the execution path.
+
+#### The Architectural Insight
+
+Six approaches failed. The pattern is clear: **no amount of instruction, tooling, or clever UX design can create agent habits.** Habits require a background process that fires without conscious effort. LLMs have no such mechanism.
+
+The gap between "knows what to do" and "does it" is not a prompting problem — it's a fundamental architectural limitation. The agent can articulate exactly why it should query dpth, explain the protocol in detail, even write a paper about the habit problem, and still never actually do it.
+
+#### The Remaining Option: Scheduled Post-Mortem
+
+The only approach that reliably triggers agent behavior is **external scheduling** — cron jobs, heartbeat checks, explicit workflow steps. This suggests the viable path is:
+
+1. **Scheduled review cron:** Periodically review memory/session transcripts and extract signals post-mortem
+2. **Explicit workflow gates:** Build dpth queries into CI/CD or task management systems where they can't be skipped
+3. **Platform-level integration:** The agent framework itself (OpenClaw) instruments tool calls and logs signals automatically, removing the agent from the loop entirely
+
+Option 3 is the most promising but the most invasive. It also changes the model from "agents curate signals" (the Analyst Model) to "the platform observes agents" — a fundamentally different architecture.
+
+The irony: **the Analyst Model requires the very capability (habits) that agents lack.** The curation step that makes signals high-quality depends on the agent remembering to curate. Without structural enforcement, the analyst never shows up for work.
 
 ### 5.3 Signal Sourcing: Depth Over Breadth
 
