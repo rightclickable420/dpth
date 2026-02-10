@@ -213,6 +213,26 @@ export interface SimilarityQuery {
   limit?: number;
 }
 
+// ─── Type Configuration Types ────────────────────────
+
+/** Configuration for entity type merge behavior */
+export interface TypeConfig {
+  /** Whether to attempt fuzzy matching for this type. Default: true */
+  fuzzyMerge?: boolean;
+  /** Default minimum confidence for fuzzy merges. Default: 0.7 */
+  defaultMinConfidence?: number;
+}
+
+/** Common type configuration presets */
+export const TYPE_PRESETS = {
+  /** Types that represent unique records — no fuzzy merge */
+  record: { fuzzyMerge: false } as TypeConfig,
+  /** Types that represent identities — fuzzy merge enabled */
+  identity: { fuzzyMerge: true, defaultMinConfidence: 0.7 } as TypeConfig,
+  /** Strict identity matching — higher threshold */
+  strictIdentity: { fuzzyMerge: true, defaultMinConfidence: 0.9 } as TypeConfig,
+} as const;
+
 // ─── Embedding Types ─────────────────────────────────
 
 /** Embedding vector for semantic search */

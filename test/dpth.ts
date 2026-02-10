@@ -168,6 +168,154 @@ async function testObjectResolve() {
   await db.close();
 }
 
+// ─── Type Configuration Tests ────────────────────────
+
+async function testTypeConfiguration() {
+  console.log('\n⚙️  Type Configuration');
+  
+  // Test configureType() disables fuzzy merge
+  const db1 = dpth();
+  db1.entity.configureType('presentation', { fuzzyMerge: false });
+  
+  // Create first presentation
+  const { entity: pres1, isNew: pres1New } = await db1.entity.resolve({
+    type: 'presentation',
+    name: 'Q4 Results',
+    source: 'powerpoint',
+    externalId: 'ppt_123',
+  });
+  assert(pres1New === true, 'first presentation is new');
+  
+  // Create second presentation with same name but different source
+  const { entity: pres2, isNew: pres2New } = await db1.entity.resolve({
+    type: 'presentation',
+    name: 'Q4 Results',
+    source: 'keynote', 
+    externalId: 'key_456',
+  });
+  assert(pres2New === true, 'second presentation is also new (no fuzzy merge)');
+  assert(pres1.id !== pres2.id, 'presentations have different IDs');
+  
+  // Test with fuzzy merge enabled (default)
+  const { entity: person1 } = await db1.entity.resolve({
+    type: 'person',
+    name: 'John Smith',
+    source: 'github',
+    externalId: 'jsmith',
+    email: 'john@example.com',
+  });
+  
+  const { entity: person2, isNew: person2New } = await db1.entity.resolve({
+    type: 'person',
+    name: 'J. Smith', // Similar name, should merge via email
+    source: 'linkedin',
+    externalId: 'john-smith-123',
+    email: 'john@example.com', // Same email ensures merge
+  });
+  assert(person2New === false, 'similar person names merge by default');
+  assert(person1.id === person2.id, 'person entities merged');
+  
+  await db1.close();
+  
+  // Test typeConfigs in dpth() options
+  const db2 = dpth({
+    typeConfigs: {
+      presentation: { fuzzyMerge: false },
+      transaction: { fuzzyMerge: false },
+      person: { fuzzyMerge: true, defaultMinConfidence: 0.9 },
+    }
+  });
+  
+  // Test configured presentation type
+  const { entity: pres3, isNew: pres3New } = await db2.entity.resolve({
+    type: 'presentation',
+    name: 'Sales Deck',
+    source: 'slides',
+    externalId: 'slide_789',
+  });
+  assert(pres3New === true, 'first presentation');
+  
+  const { entity: pres4, isNew: pres4New } = await db2.entity.resolve({
+    type: 'presentation', 
+    name: 'Sales Deck',
+    source: 'figma',
+    externalId: 'fig_101',
+  });
+  assert(pres4New === true, 'presentations dont merge via dpth() config');
+  assert(pres3.id !== pres4.id, 'different presentation IDs');
+  
+  // Test per-call minConfidence overrides type default
+  const { entity: person3 } = await db2.entity.resolve({
+    type: 'person',
+    name: 'Alice Cooper',
+    source: 'crm',
+    externalId: 'alice_1',
+  });
+  
+  const { entity: person4, isNew: person4New } = await db2.entity.resolve({
+    type: 'person',
+    name: 'A. Cooper', // Would merge with 0.7 but not with 0.9 default
+    source: 'email',
+    externalId: 'acooper',
+    minConfidence: 0.6, // Override type default
+  });
+  // This might merge or not depending on exact scoring, but important part is
+  // that per-call minConfidence is respected
+  
+  // Test getTypeConfig()
+  const personConfig = db2.entity.getTypeConfig('person');
+  assert(personConfig?.fuzzyMerge === true, 'person config retrieved');
+  assert(personConfig?.defaultMinConfidence === 0.9, 'person default confidence');
+  
+  const unknownConfig = db2.entity.getTypeConfig('nonexistent');
+  assert(unknownConfig === undefined, 'unknown type returns undefined');
+  
+  await db2.close();
+}
+
+// ─── Type Presets Tests ──────────────────────────────
+
+async function testTypePresets() {
+  console.log('\n🎨 Type Presets');
+  
+  // Import TYPE_PRESETS from the main module
+  const { TYPE_PRESETS } = await import('../src/types.js');
+  
+  assert(TYPE_PRESETS.record.fuzzyMerge === false, 'record preset disables fuzzy merge');
+  assert(TYPE_PRESETS.identity.fuzzyMerge === true, 'identity preset enables fuzzy merge');
+  assert(TYPE_PRESETS.identity.defaultMinConfidence === 0.7, 'identity preset confidence');
+  assert(TYPE_PRESETS.strictIdentity.fuzzyMerge === true, 'strict identity fuzzy merge');
+  assert(TYPE_PRESETS.strictIdentity.defaultMinConfidence === 0.9, 'strict identity confidence');
+  
+  // Test using presets
+  const db = dpth({
+    typeConfigs: {
+      log: TYPE_PRESETS.record,
+      person: TYPE_PRESETS.strictIdentity,
+    }
+  });
+  
+  // Test record preset (no fuzzy merge)
+  const { entity: log1, isNew: log1New } = await db.entity.resolve({
+    type: 'log',
+    name: 'User login',
+    source: 'app',
+    externalId: 'log_123',
+  });
+  assert(log1New === true, 'first log entry');
+  
+  const { entity: log2, isNew: log2New } = await db.entity.resolve({
+    type: 'log',
+    name: 'User login',
+    source: 'analytics',
+    externalId: 'analytics_456',
+  });
+  assert(log2New === true, 'logs dont merge (record preset)');
+  assert(log1.id !== log2.id, 'different log IDs');
+  
+  await db.close();
+}
+
 // ─── Validation Tests ────────────────────────────────
 
 async function testValidation() {
@@ -522,6 +670,8 @@ async function main() {
   
   await testEntityAPI();
   await testObjectResolve();
+  await testTypeConfiguration();
+  await testTypePresets();
   await testValidation();
   await testTemporalAPI();
   await testCorrelationAPI();

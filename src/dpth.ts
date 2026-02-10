@@ -39,6 +39,7 @@ import type {
   TemporalValue,
   Metric,
   MetricPoint,
+  TypeConfig,
 } from './types.js';
 
 // ─── Types ───────────────────────────────────────────
@@ -86,6 +87,16 @@ export interface DpthOptions {
    * }
    */
   embedFn?: EmbedFn;
+  /** 
+   * Type-specific merge configurations. Controls fuzzy matching behavior per entity type.
+   * 
+   * @example
+   * typeConfigs: {
+   *   presentation: { fuzzyMerge: false },
+   *   person: { fuzzyMerge: true, defaultMinConfidence: 0.8 }
+   * }
+   */
+  typeConfigs?: Record<string, TypeConfig>;
 }
 
 /** Object-style options for entity.resolve() */
@@ -170,6 +181,13 @@ export class Dpth {
     this.correlation = new CorrelationAPI(this.adapter);
     this.vector = new VectorAPI(this.adapter);
     this.signal = new SignalAPI(this._network);
+    
+    // Apply initial type configurations
+    if (options.typeConfigs) {
+      for (const [type, config] of Object.entries(options.typeConfigs)) {
+        this.entity.configureType(type, config);
+      }
+    }
     
     this._ready = this.init(options);
   }
@@ -357,11 +375,27 @@ export interface SimilarEntity {
 }
 
 class EntityAPI {
+  private typeConfigs: Map<string, TypeConfig> = new Map();
+
   constructor(
     private adapter: StorageAdapter, 
     private network: NetworkLayer | null = null,
     private embedFn: EmbedFn | null = null
   ) {}
+
+  /**
+   * Configure merge behavior for a specific entity type.
+   */
+  configureType(type: string, config: TypeConfig): void {
+    this.typeConfigs.set(type, config);
+  }
+
+  /**
+   * Get merge configuration for a specific entity type.
+   */
+  getTypeConfig(type: string): TypeConfig | undefined {
+    return this.typeConfigs.get(type);
+  }
   
   /**
    * Resolve an entity — find existing match or create new.
@@ -394,7 +428,7 @@ class EntityAPI {
     let email: string | undefined;
     let aliases: string[] | undefined;
     let attributes: Record<string, unknown> | undefined;
-    let minConfidence: number;
+    let minConfidence: number | undefined;
     
     if (typeof typeOrOpts === 'object') {
       // Object form (preferred)
@@ -409,7 +443,7 @@ class EntityAPI {
       email = typeOrOpts.email;
       aliases = typeOrOpts.aliases;
       attributes = typeOrOpts.attributes;
-      minConfidence = typeOrOpts.minConfidence ?? 0.7;
+      minConfidence = typeOrOpts.minConfidence; // Don't set default yet, will use type config
     } else {
       // Legacy positional form
       type = typeOrOpts;
@@ -419,7 +453,7 @@ class EntityAPI {
       email = options?.email;
       aliases = options?.aliases;
       attributes = options?.attributes;
-      minConfidence = options?.minConfidence ?? 0.7;
+      minConfidence = options?.minConfidence; // Don't set default yet, will use type config
     }
     
     const sKey = `${resolvedSourceId}:${resolvedExternalId}`;
@@ -435,6 +469,58 @@ class EntityAPI {
         await this.adapter.put('entities', entity.id, entity);
         return { entity, isNew: false, confidence: 1.0 };
       }
+    }
+    
+    // Check type configuration for merge behavior
+    const typeConfig = this.typeConfigs.get(type);
+    
+    // Apply type default minConfidence if no per-call override provided
+    if (minConfidence === undefined) {
+      minConfidence = typeConfig?.defaultMinConfidence ?? 0.7;
+    }
+    
+    // Skip fuzzy matching if type disables it
+    if (typeConfig?.fuzzyMerge === false) {
+      // Create new entity directly (skip fuzzy matching)
+      const id = generateEntityId();
+      const now = new Date();
+      const entityAttrs: Record<string, TemporalValue<unknown>> = {};
+      
+      if (attributes) {
+        for (const [key, value] of Object.entries(attributes)) {
+          entityAttrs[key] = {
+            current: value,
+            history: [{ value, validFrom: now, validTo: null, source: resolvedSourceId }],
+          };
+        }
+      }
+      
+      if (email) {
+        entityAttrs['email'] = {
+          current: email,
+          history: [{ value: email, validFrom: now, validTo: null, source: resolvedSourceId }],
+        };
+      }
+      
+      const entity: Entity = {
+        id,
+        type,
+        name: resolvedName,
+        aliases: aliases || [],
+        sources: [{ sourceId: resolvedSourceId, externalId: resolvedExternalId, confidence: 1.0, lastSeen: now }],
+        attributes: entityAttrs,
+        createdAt: now,
+        updatedAt: now,
+      };
+      
+      await this.adapter.put('entities', id, entity);
+      await this.adapter.put('source_index', sKey, id);
+      await this.updateEmailIndex(entity);
+      
+      // Auto-embed if embedFn provided (non-blocking)
+      this.embedEntity(entity).catch(() => {});
+      
+      return { entity, isNew: true, confidence: 1.0 };
     }
     
     // Try fuzzy matching against existing entities
