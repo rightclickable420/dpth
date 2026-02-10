@@ -1,6 +1,6 @@
 {
   "name": "dpth",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Collective intelligence for AI agents. Entity resolution, temporal history, correlation detection, and network signals.",
   "type": "module",
   "main": "dist/index.js",
