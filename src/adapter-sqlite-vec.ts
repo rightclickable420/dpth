@@ -142,9 +142,11 @@ export class SqliteVecAdapter extends SQLiteAdapter implements VectorAdapter {
     // Convert to Float32Array for sqlite-vec
     const vecBlob = new Float32Array(vector);
     
-    // Upsert vector
+    // Upsert vector — vec0 virtual tables don't support INSERT OR REPLACE,
+    // so we delete first then insert
+    db.prepare(`DELETE FROM ${tableName} WHERE key = ?`).run(key);
     db.prepare(`
-      INSERT OR REPLACE INTO ${tableName} (key, embedding)
+      INSERT INTO ${tableName} (key, embedding)
       VALUES (?, ?)
     `).run(key, vecBlob);
     
